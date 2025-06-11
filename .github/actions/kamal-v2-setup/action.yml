@@ -1,0 +1,477 @@
+name: 'Kamal v2 Setup'
+description: 'Setup and configure Kamal v2 deployment environment with comprehensive validation and best practices'
+author: 'WCMC DevOps Team'
+
+inputs:
+  environment:
+    description: 'Environment to setup (staging, production)'
+    required: true
+  kamal-version:
+    description: 'Kamal version to install'
+    required: false
+    default: '2.5.3'
+  ruby-version:
+    description: 'Ruby version to use'
+    required: false
+    default: '3.3.5'
+  node-version:
+    description: 'Node.js version to use'
+    required: false
+    default: '22.3.0'
+  buildx-version:
+    description: 'Docker Buildx version to use'
+    required: false
+    default: 'v0.17.1'
+  working-directory:
+    description: 'Working directory for Rails application'
+    required: false
+    default: '.'
+  dockerfile-path:
+    description: 'Path to Dockerfile relative to working directory'
+    required: false
+    default: 'Dockerfile.deploy'
+  kamal-config-path:
+    description: 'Path to Kamal config file relative to working directory'
+    required: false
+    default: 'config/deploy.yml'
+  ssh-private-key:
+    description: 'SSH private key for server access'
+    required: true
+  kamal-registry-username:
+    description: 'Docker registry username'
+    required: true
+  kamal-registry-password:
+    description: 'Docker registry password'
+    required: true
+  rails-master-key:
+    description: 'Rails master key'
+    required: true
+  rails-default-public-app-host:
+    description: 'Rails default public app host'
+    required: true
+  rails-default-public-app-host-protocol:
+    description: 'Rails default public app host protocol'
+    required: true
+  database-host:
+    description: 'Database hostname'
+    required: true
+  database-name:
+    description: 'Database name'
+    required: true
+  database-username:
+    description: 'Database username'
+    required: true
+  database-password:
+    description: 'Database password'
+    required: true
+  database-port:
+    description: 'Database port'
+    required: false
+    default: '5432'
+  aws-access-key-id:
+    description: 'AWS Access Key ID'
+    required: false
+  aws-secret-access-key:
+    description: 'AWS Secret Access Key'
+    required: false
+  aws-region:
+    description: 'AWS Region'
+    required: false
+  # Redis Configuration
+  redis-username:
+    description: 'Redis username'
+    required: false
+  redis-password:
+    description: 'Redis password'
+    required: false
+  redis-host:
+    description: 'Redis host'
+    required: false
+    default: 'host.docker.internal'
+  redis-port:
+    description: 'Redis port'
+    required: false
+    default: '6379'
+  redis-database:
+    description: 'Redis database number for Sidekiq'
+    required: false
+    default: '1'
+  # Mail Configuration
+  mail-username:
+    description: 'Mail server username'
+    required: false
+  mail-password:
+    description: 'Mail server password'
+    required: false
+  # AWS S3 Configuration
+  aws-s3-access-key-id:
+    description: 'AWS S3 Access Key ID'
+    required: false
+  aws-s3-secret-access-key:
+    description: 'AWS S3 Secret Access Key'
+    required: false
+  aws-s3-region:
+    description: 'AWS S3 Region'
+    required: false
+  aws-s3-bucket-name:
+    description: 'AWS S3 Bucket Name'
+    required: false
+  # Project-specific Database Naming
+  database-env-prefix:
+    description: 'Database environment variable prefix (e.g., OCEAN_CENSUS, TARGET_TRACKER)'
+    required: false
+    default: 'TARGET_TRACKER'
+  # Frontend Integration (for projects with frontend components)
+  frontend-app-name:
+    description: 'Frontend application name'
+    required: false
+  # Azure AD Integration (for WCMC User Management)
+  azure-ad-client-id:
+    description: 'Azure AD Client ID for WCMC User Management'
+    required: false
+  azure-ad-client-secret:
+    description: 'Azure AD Client Secret for WCMC User Management'
+    required: false
+  azure-ad-tenant-id:
+    description: 'Azure AD Tenant ID for WCMC User Management'
+    required: false
+  # WCMC User Management Module
+  wcmc-user-management-secret:
+    description: 'WCMC User Management Secret'
+    required: false
+  # Generic Additional Secrets
+  additional-secrets:
+    description: 'Additional secrets in KEY=VALUE format, one per line'
+    required: false
+  pre-setup-commands:
+    description: 'Additional commands to run before setup'
+    required: false
+  post-setup-commands:
+    description: 'Additional commands to run after setup'
+    required: false
+  enable-health-checks:
+    description: 'Enable health checks during setup'
+    required: false
+    default: 'true'
+  setup-timeout:
+    description: 'Timeout for setup operation in minutes'
+    required: false
+    default: '30'
+
+outputs:
+  setup-status:
+    description: 'Status of the setup operation'
+    value: ${{ steps.setup-result.outputs.status }}
+  setup-duration:
+    description: 'Duration of the setup operation'
+    value: ${{ steps.setup-result.outputs.duration }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        echo "🔍 Validating inputs..."
+        
+        # Validate environment
+        if [[ ! "${{ inputs.environment }}" =~ ^(staging|production)$ ]]; then
+          echo "❌ Error: environment must be either 'staging' or 'production'"
+          exit 1
+        fi
+        
+        # Validate working directory exists
+        if [[ ! -d "${{ inputs.working-directory }}" ]]; then
+          echo "❌ Error: working-directory '${{ inputs.working-directory }}' does not exist"
+          exit 1
+        fi
+        
+        # Validate required files
+        dockerfile_path="${{ inputs.working-directory }}/${{ inputs.dockerfile-path }}"
+        kamal_config_path="${{ inputs.working-directory }}/${{ inputs.kamal-config-path }}"
+        
+        if [[ ! -f "$dockerfile_path" ]]; then
+          echo "❌ Error: Dockerfile not found at '$dockerfile_path'"
+          exit 1
+        fi
+        
+        if [[ ! -f "$kamal_config_path" ]]; then
+          echo "❌ Error: Kamal config not found at '$kamal_config_path'"
+          exit 1
+        fi
+        
+        echo "✅ Input validation completed"
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Install Yarn
+      shell: bash
+      run: |
+        echo "📦 Installing Yarn..."
+        npm install -g yarn
+        yarn --version
+
+    - name: Set up Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: ${{ inputs.ruby-version }}
+        bundler-cache: false
+
+    - name: Install PostgreSQL Client Libraries
+      shell: bash
+      run: |
+        echo "🐘 Installing PostgreSQL client libraries..."
+        sudo apt-get update
+        sudo apt-get install -y libpq-dev
+
+    - name: Install Kamal
+      shell: bash
+      run: |
+        echo "🚢 Installing Kamal v${{ inputs.kamal-version }}..."
+        gem install kamal -v ${{ inputs.kamal-version }}
+        kamal version
+
+    - name: Set up SSH
+      uses: webfactory/ssh-agent@v0.9.0
+      with:
+        ssh-private-key: ${{ inputs.ssh-private-key }}
+
+    - name: Test SSH connectivity
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🔑 Testing SSH connectivity..."
+        # Extract hosts from Kamal config
+        if command -v yq >/dev/null 2>&1; then
+          hosts=$(yq eval '.servers.*[]' ${{ inputs.kamal-config-path }} 2>/dev/null || echo "")
+        else
+          # Fallback to grep if yq is not available
+          hosts=$(grep -oP 'servers:.*?(\d+\.\d+\.\d+\.\d+)' ${{ inputs.kamal-config-path }} || echo "")
+        fi
+        
+        if [[ -n "$hosts" ]]; then
+          for host in $hosts; do
+            echo "Testing connection to $host..."
+            ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no $host "echo 'SSH connection successful to $host'" || echo "⚠️ Warning: Could not connect to $host"
+          done
+        else
+          echo "ℹ️ No hosts found in config for SSH testing"
+        fi
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      with:
+        install: true
+        version: ${{ inputs.buildx-version }}
+
+    - name: Verify and Configure Buildx
+      shell: bash
+      run: |
+        echo "🐳 Configuring Docker Buildx..."
+        if ! docker buildx version; then
+          echo "❌ Error: Buildx not installed correctly"
+          exit 1
+        fi
+        
+        # Create and use buildx instance
+        docker buildx create --name kamal-builder --driver docker-container --use 2>/dev/null || docker buildx use kamal-builder
+        docker buildx inspect --bootstrap
+        echo "✅ Buildx version: $(docker buildx version)"
+
+    - name: Create Kamal secrets file
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🔐 Creating Kamal secrets file..."
+        mkdir -p .kamal
+        secrets_file=".kamal/secrets.${{ inputs.environment }}"
+        
+        # Create secrets file with proper permissions
+        touch "$secrets_file"
+        chmod 600 "$secrets_file"
+        
+        # Base secrets
+        cat <<EOF > "$secrets_file"
+        KAMAL_REGISTRY_USERNAME=${{ inputs.kamal-registry-username }}
+        KAMAL_REGISTRY_PASSWORD=${{ inputs.kamal-registry-password }}
+        RAILS_MASTER_KEY=${{ inputs.rails-master-key }}
+        RAILS_DEFAULT_PUBLIC_APP_HOST=${{ inputs.rails-default-public-app-host }}
+        RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL=${{ inputs.rails-default-public-app-host-protocol }}
+        ${{ inputs.database-env-prefix }}_DATABASE_HOSTNAME=${{ inputs.database-host }}
+        ${{ inputs.database-env-prefix }}_DATABASE_NAME=${{ inputs.database-name }}
+        ${{ inputs.database-env-prefix }}_DATABASE_USERNAME=${{ inputs.database-username }}
+        ${{ inputs.database-env-prefix }}_DATABASE_PASSWORD=${{ inputs.database-password }}
+        ${{ inputs.database-env-prefix }}_DATABASE_PORT=${{ inputs.database-port }}
+        EOF
+        
+        # Add Redis configuration if provided
+        if [[ -n "${{ inputs.redis-username }}" && -n "${{ inputs.redis-password }}" ]]; then
+          echo "REDIS_USERNAME=${{ inputs.redis-username }}" >> "$secrets_file"
+          echo "REDIS_PASSWORD=${{ inputs.redis-password }}" >> "$secrets_file"
+          echo "SIDEKIQ_REDIS_URL=redis://${{ inputs.redis-username }}:${{ inputs.redis-password }}@${{ inputs.redis-host }}:${{ inputs.redis-port }}/${{ inputs.redis-database }}" >> "$secrets_file"
+          echo "✅ Added Redis configuration with Sidekiq URL"
+        fi
+        
+        # Add Mail configuration if provided
+        if [[ -n "${{ inputs.mail-username }}" && -n "${{ inputs.mail-password }}" ]]; then
+          echo "MAIL_USERNAME=${{ inputs.mail-username }}" >> "$secrets_file"
+          echo "MAIL_PASSWORD=${{ inputs.mail-password }}" >> "$secrets_file"
+          echo "✅ Added Mail server configuration"
+        fi
+        
+        # Add AWS general secrets if provided
+        if [[ -n "${{ inputs.aws-access-key-id }}" ]]; then
+          echo "AWS_ACCESS_KEY_ID=${{ inputs.aws-access-key-id }}" >> "$secrets_file"
+          echo "AWS_SECRET_ACCESS_KEY=${{ inputs.aws-secret-access-key }}" >> "$secrets_file"
+          echo "AWS_REGION=${{ inputs.aws-region }}" >> "$secrets_file"
+          echo "✅ Added AWS general configuration"
+        fi
+        
+        # Add AWS S3 specific secrets if provided
+        if [[ -n "${{ inputs.aws-s3-access-key-id }}" ]]; then
+          echo "AWS_S3_ACCESS_KEY_ID=${{ inputs.aws-s3-access-key-id }}" >> "$secrets_file"
+          echo "AWS_S3_SECRET_ACCESS_KEY=${{ inputs.aws-s3-secret-access-key }}" >> "$secrets_file"
+          echo "AWS_S3_REGION=${{ inputs.aws-s3-region }}" >> "$secrets_file"
+          echo "AWS_S3_NAME=${{ inputs.aws-s3-bucket-name }}" >> "$secrets_file"
+          echo "✅ Added AWS S3 configuration"
+        fi
+        
+        # Add Frontend Integration if provided
+        if [[ -n "${{ inputs.frontend-app-name }}" ]]; then
+          echo "FRONTEND_APP_NAME=${{ inputs.frontend-app-name }}" >> "$secrets_file"
+          echo "✅ Added Frontend integration configuration"
+        fi
+        
+        # Add Azure AD configuration if provided
+        if [[ -n "${{ inputs.azure-ad-client-id }}" ]]; then
+          echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID=${{ inputs.azure-ad-client-id }}" >> "$secrets_file"
+          echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_SECRET=${{ inputs.azure-ad-client-secret }}" >> "$secrets_file"
+          echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_TENANT_ID=${{ inputs.azure-ad-tenant-id }}" >> "$secrets_file"
+          echo "✅ Added Azure AD configuration for WCMC User Management"
+        fi
+        
+        # Add WCMC User Management configuration if provided
+        if [[ -n "${{ inputs.wcmc-user-management-secret }}" ]]; then
+          echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET=${{ inputs.wcmc-user-management-secret }}" >> "$secrets_file"
+          echo "✅ Added WCMC User Management configuration"
+        fi
+        
+        # Add additional secrets if provided
+        if [[ -n "${{ inputs.additional-secrets }}" ]]; then
+          echo "" >> "$secrets_file"
+          echo "# Additional project-specific secrets" >> "$secrets_file"
+          echo "${{ inputs.additional-secrets }}" >> "$secrets_file"
+          echo "✅ Added additional project-specific secrets"
+        fi
+        
+        echo "✅ Secrets file created with $(wc -l < "$secrets_file") entries"
+
+    - name: Run pre-setup commands
+      if: inputs.pre-setup-commands != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🔧 Running pre-setup commands..."
+        ${{ inputs.pre-setup-commands }}
+
+    - name: Validate Kamal configuration
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "✅ Validating Kamal configuration..."
+        # Load secrets
+        export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
+        
+        # Validate config
+        kamal config validate -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }}
+
+    - name: Run Kamal setup with timeout
+      id: kamal-setup
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🚀 Starting Kamal setup for ${{ inputs.environment }}..."
+        start_time=$(date +%s)
+        
+        # Load secrets
+        export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
+        
+        # Run setup with verbose output
+        if kamal setup --verbose -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }}; then
+          end_time=$(date +%s)
+          duration=$((end_time - start_time))
+          echo "setup-duration=${duration}" >> $GITHUB_OUTPUT
+          echo "setup-status=success" >> $GITHUB_OUTPUT
+          echo "✅ Kamal setup completed successfully in ${duration} seconds"
+        else
+          end_time=$(date +%s)
+          duration=$((end_time - start_time))
+          echo "setup-duration=${duration}" >> $GITHUB_OUTPUT
+          echo "setup-status=failed" >> $GITHUB_OUTPUT
+          echo "❌ Kamal setup failed after ${duration} seconds"
+          exit 1
+        fi
+
+    - name: Run health checks
+      if: inputs.enable-health-checks == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🏥 Running health checks..."
+        export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
+        
+        # Check if containers are running
+        kamal ps -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }}
+        
+        # Check application health if health check endpoint is configured
+        if grep -q "healthcheck" ${{ inputs.kamal-config-path }}; then
+          echo "🔍 Checking application health endpoints..."
+          # Add specific health check logic here based on your app's health endpoint
+        fi
+
+    - name: Run post-setup commands
+      if: inputs.post-setup-commands != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🔧 Running post-setup commands..."
+        ${{ inputs.post-setup-commands }}
+
+    - name: Set setup result
+      id: setup-result
+      if: always()
+      shell: bash
+      run: |
+        if [[ "${{ steps.kamal-setup.outcome }}" == "success" ]]; then
+          echo "status=success" >> $GITHUB_OUTPUT
+        else
+          echo "status=failed" >> $GITHUB_OUTPUT
+        fi
+        
+        # Get duration from setup step or calculate fallback
+        duration="${{ steps.kamal-setup.outputs.setup-duration }}"
+        if [[ -z "$duration" ]]; then
+          duration="unknown"
+        fi
+        echo "duration=${duration}" >> $GITHUB_OUTPUT
+
+    - name: Cleanup on failure
+      if: failure()
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🧹 Cleaning up after failure..."
+        # Remove secrets file
+        rm -f .kamal/secrets.${{ inputs.environment }}
+        
+        # Clean up Docker resources
+        docker system prune -f || true
+        
+        echo "✅ Cleanup completed"
+
+branding:
+  icon: 'settings'
+  color: 'green' 

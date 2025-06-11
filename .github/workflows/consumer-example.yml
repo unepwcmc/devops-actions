@@ -1,0 +1,188 @@
+# This is an example workflow for consuming repositories
+# Copy this to your project's .github/workflows/ directory and customize
+
+name: Deploy Rails Application
+
+on:
+  push:
+    branches:
+      - main        # Deploy to production
+      - staging     # Deploy to staging
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+        default: 'staging'
+
+env:
+  # Set environment based on branch or manual input
+  DEPLOY_ENV: ${{ github.event.inputs.environment || (github.ref_name == 'main' && 'production' || 'staging') }}
+
+jobs:
+  deploy:
+    name: Deploy Rails Application
+    runs-on: self-hosted
+    environment: ${{ github.event.inputs.environment || (github.ref_name == 'main' && 'production' || 'staging') }}
+    concurrency:
+      group: deploy-${{ github.event.inputs.environment || (github.ref_name == 'main' && 'production' || 'staging') }}
+      cancel-in-progress: false  # Don't cancel in-progress deployments
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set Environment Variables
+        run: |
+          echo "START_TIME=$(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_ENV
+          echo "COMMIT_MESSAGE<<EOF" >> $GITHUB_ENV
+          echo "${{ github.event.head_commit.message || 'Manual deployment' }}" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      # Optional: Setup phase (only run for first-time deployments)
+      - name: Setup Kamal v2 (First-time only)
+        id: setup
+        if: ${{ env.DEPLOY_ENV == 'staging' }}  # Only setup on staging
+        uses: unepwcmc/devops-actions/.github/actions/kamal-v2-setup@v1
+        with:
+          environment: ${{ env.DEPLOY_ENV }}
+          working-directory: '.'  # Adjust to your Rails app directory
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          kamal-registry-username: ${{ secrets.KAMAL_REGISTRY_USERNAME }}
+          kamal-registry-password: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
+          rails-master-key: ${{ secrets.RAILS_MASTER_KEY }}
+          rails-default-public-app-host: ${{ secrets.RAILS_DEFAULT_PUBLIC_APP_HOST }}
+          rails-default-public-app-host-protocol: ${{ secrets.RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL }}
+          database-host: ${{ secrets.DATABASE_HOST }}
+          database-name: ${{ secrets.DATABASE_NAME }}
+          database-username: ${{ secrets.DATABASE_USERNAME }}
+          database-password: ${{ secrets.DATABASE_PASSWORD }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # Notify deployment start
+      - name: Notify Slack - Deployment Started
+        id: notify-start
+        uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'started'
+          action-type: 'deploy'
+          environment: ${{ env.DEPLOY_ENV }}
+          repository: ${{ github.repository }}
+          repository-url: ${{ github.server_url }}/${{ github.repository }}
+          action-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          actor: ${{ github.actor }}
+          actor-url: https://github.com/${{ github.actor }}
+          workflow-name: ${{ github.workflow }}
+          run-id: ${{ github.run_id }}
+          commit-message: ${{ env.COMMIT_MESSAGE }}
+          start-time: ${{ env.START_TIME }}
+          kamal-version: '2.5.3'
+
+      # Main deployment
+      - name: Deploy with Kamal v2
+        id: deploy
+        uses: unepwcmc/devops-actions/.github/actions/kamal-v2-deploy@v1
+        with:
+          environment: ${{ env.DEPLOY_ENV }}
+          working-directory: '.'  # Adjust to your Rails app directory
+          # Health check configuration
+          enable-health-checks: 'true'
+          health-check-url: ${{ secrets.HEALTH_CHECK_URL }}
+          health-check-timeout: '300'
+          # Rollback configuration
+          enable-rollback-on-failure: 'true'
+          # Deployment strategy
+          deployment-strategy: ${{ env.DEPLOY_ENV == 'production' && 'rolling' || 'immediate' }}
+          # Maintenance mode for production
+          enable-maintenance-mode: ${{ env.DEPLOY_ENV == 'production' && 'true' || 'false' }}
+          # Required secrets
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          kamal-registry-username: ${{ secrets.KAMAL_REGISTRY_USERNAME }}
+          kamal-registry-password: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
+          rails-master-key: ${{ secrets.RAILS_MASTER_KEY }}
+          database-host: ${{ secrets.DATABASE_HOST }}
+          database-name: ${{ secrets.DATABASE_NAME }}
+          database-username: ${{ secrets.DATABASE_USERNAME }}
+          database-password: ${{ secrets.DATABASE_PASSWORD }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+          # Custom commands
+          pre-deploy-commands: |
+            echo "🔄 Running database migrations..."
+            # bundle exec rails db:migrate
+            echo "🧹 Cleaning up old assets..."
+            # Add your pre-deployment commands here
+          post-deploy-commands: |
+            echo "🚀 Warming up application cache..."
+            # curl -s "$HEALTH_CHECK_URL" > /dev/null
+            echo "📊 Deployment completed successfully!"
+            # Add your post-deployment commands here
+
+      - name: Set End Time
+        if: always()
+        run: echo "END_TIME=$(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_ENV
+
+      # Notify success
+      - name: Notify Slack - Deployment Success
+        if: success()
+        uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'success'
+          action-type: 'deploy'
+          environment: ${{ env.DEPLOY_ENV }}
+          repository: ${{ github.repository }}
+          repository-url: ${{ github.server_url }}/${{ github.repository }}
+          action-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          actor: ${{ github.actor }}
+          actor-url: https://github.com/${{ github.actor }}
+          workflow-name: ${{ github.workflow }}
+          run-id: ${{ github.run_id }}
+          commit-message: ${{ env.COMMIT_MESSAGE }}
+          end-time: ${{ env.END_TIME }}
+          update-ts: ${{ steps.notify-start.outputs.message-ts }}
+          kamal-version: '2.5.3'
+
+      # Notify failure
+      - name: Notify Slack - Deployment Failure
+        if: failure()
+        uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'failure'
+          action-type: 'deploy'
+          environment: ${{ env.DEPLOY_ENV }}
+          repository: ${{ github.repository }}
+          repository-url: ${{ github.server_url }}/${{ github.repository }}
+          action-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          actor: ${{ github.actor }}
+          actor-url: https://github.com/${{ github.actor }}
+          workflow-name: ${{ github.workflow }}
+          run-id: ${{ github.run_id }}
+          commit-message: ${{ env.COMMIT_MESSAGE }}
+          end-time: ${{ env.END_TIME }}
+          update-ts: ${{ steps.notify-start.outputs.message-ts }}
+          failure-reason: ${{ steps.deploy.outputs.rollback-performed == 'true' && 'Deployment failed - automatic rollback performed' || 'Deployment failed - check logs for details' }}
+          kamal-version: '2.5.3'
+
+      # Output deployment results
+      - name: Output Deployment Results
+        if: always()
+        run: |
+          echo "## 📊 Deployment Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment**: ${{ env.DEPLOY_ENV }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: ${{ steps.deploy.outputs.deployment-status }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Duration**: ${{ steps.deploy.outputs.deployment-duration }} seconds" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ steps.deploy.outputs.deployed-version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Rollback Performed**: ${{ steps.deploy.outputs.rollback-performed }}" >> $GITHUB_STEP_SUMMARY 

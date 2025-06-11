@@ -1,0 +1,146 @@
+name: 'Slack Notify'
+description: 'Send deployment notifications to Slack with customizable messages and formatting'
+author: 'WCMC DevOps Team'
+
+inputs:
+  slack-bot-token:
+    description: 'Slack bot token for authentication'
+    required: true
+  slack-channel-id:
+    description: 'Slack channel ID to send notifications to'
+    required: true
+  notification-type:
+    description: 'Type of notification: started, success, failure, custom'
+    required: true
+    default: 'started'
+  action-type:
+    description: 'Type of action: deploy, setup, provision'
+    required: true
+    default: 'deploy'
+  environment:
+    description: 'Environment being deployed to (staging, production)'
+    required: true
+  repository:
+    description: 'Repository name'
+    required: true
+  repository-url:
+    description: 'Repository URL'
+    required: true
+  action-run-url:
+    description: 'GitHub Action run URL'
+    required: true
+  actor:
+    description: 'GitHub actor who triggered the action'
+    required: true
+  actor-url:
+    description: 'GitHub actor profile URL'
+    required: true
+  workflow-name:
+    description: 'Name of the workflow'
+    required: true
+  run-id:
+    description: 'GitHub run ID'
+    required: true
+  commit-message:
+    description: 'Commit message that triggered the deployment'
+    required: false
+    default: 'No commit message available'
+  runner-name:
+    description: 'Name of the runner executing the job'
+    required: false
+    default: 'GitHub Runner'
+  start-time:
+    description: 'Start time of the action (for started notifications)'
+    required: false
+  end-time:
+    description: 'End time of the action (for success/failure notifications)'
+    required: false
+  failure-reason:
+    description: 'Reason for failure (for failure notifications)'
+    required: false
+    default: 'Check logs for details'
+  update-ts:
+    description: 'Timestamp to update an existing message'
+    required: false
+  custom-message:
+    description: 'Custom message for custom notification type'
+    required: false
+  kamal-version:
+    description: 'Kamal version being used'
+    required: false
+
+outputs:
+  message-ts:
+    description: 'Timestamp of the sent message for future updates'
+    value: ${{ steps.slack-notification.outputs.ts }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        if [[ ! "${{ inputs.notification-type }}" =~ ^(started|success|failure|custom)$ ]]; then
+          echo "Error: notification-type must be one of: started, success, failure, custom"
+          exit 1
+        fi
+        
+        if [[ ! "${{ inputs.action-type }}" =~ ^(deploy|setup|provision)$ ]]; then
+          echo "Error: action-type must be one of: deploy, setup, provision"
+          exit 1
+        fi
+        
+        if [[ ! "${{ inputs.environment }}" =~ ^(staging|production)$ ]]; then
+          echo "Error: environment must be either staging or production"
+          exit 1
+        fi
+
+    - name: Set notification template
+      id: template
+      shell: bash
+      run: |
+        case "${{ inputs.notification-type }}" in
+          "started")
+            echo "template=github-deploy-slack-started.json" >> $GITHUB_OUTPUT
+            ;;
+          "success")
+            echo "template=github-deploy-slack-success.json" >> $GITHUB_OUTPUT
+            ;;
+          "failure")
+            echo "template=github-deploy-slack-failure.json" >> $GITHUB_OUTPUT
+            ;;
+          "custom")
+            echo "template=github-slack-${{ inputs.notification-type }}.json" >> $GITHUB_OUTPUT
+            ;;
+        esac
+
+    - name: Send Slack notification
+      id: slack-notification
+      uses: slackapi/slack-github-action@v1.26.0
+      with:
+        channel-id: ${{ inputs.slack-channel-id }}
+        payload-file-path: .github/notifications/slack/${{ steps.template.outputs.template }}
+        payload-file-path-parsed: true
+        update-ts: ${{ inputs.update-ts }}
+      env:
+        SLACK_BOT_TOKEN: ${{ inputs.slack-bot-token }}
+        REPOSITORY: ${{ inputs.repository }}
+        REPOSITORY_URL: ${{ inputs.repository-url }}
+        RUNNER_NAME: ${{ inputs.runner-name }}
+        ENVIRONMENT: ${{ inputs.environment }}
+        START_TIME: ${{ inputs.start-time }}
+        END_TIME: ${{ inputs.end-time }}
+        COMMIT_MESSAGE: ${{ inputs.commit-message }}
+        ACTION_RUN_URL: ${{ inputs.action-run-url }}
+        ACTOR: ${{ inputs.actor }}
+        ACTOR_URL: ${{ inputs.actor-url }}
+        WORKFLOW_NAME: ${{ inputs.workflow-name }}
+        RUN_ID: ${{ inputs.run-id }}
+        FAILURE_REASON: ${{ inputs.failure-reason }}
+        ACTION_TYPE: ${{ inputs.action-type }}
+        KAMAL_VERSION: ${{ inputs.kamal-version }}
+        CUSTOM_MESSAGE: ${{ inputs.custom-message }}
+
+branding:
+  icon: 'message-circle'
+  color: 'blue' 

@@ -1,0 +1,121 @@
+name: Kamal v1 Backend Deployment
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+
+jobs:
+  deploy:
+    name: Deploy Rails Backend (Kamal v1)
+    runs-on: self-hosted
+    environment: ${{ inputs.environment || 'staging' }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Notification: Start
+      - name: Notify Deployment Start
+        id: notify-start
+        uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'started'
+          action-type: 'deploy'
+          environment: ${{ inputs.environment || 'staging' }}
+          repository: ${{ github.repository }}
+          repository-url: ${{ github.server_url }}/${{ github.repository }}
+          action-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          actor: ${{ github.actor }}
+          actor-url: https://github.com/${{ github.actor }}
+          workflow-name: ${{ github.workflow }}
+          run-id: ${{ github.run_id }}
+          commit-message: ${{ github.event.head_commit.message }}
+
+      # Main Deployment
+      - name: Deploy with Kamal v1
+        id: deploy
+        uses: unepwcmc/devops-actions/.github/actions/kamal-v1-deploy@v1
+        with:
+          environment: ${{ inputs.environment || 'staging' }}
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          kamal-registry-username: ${{ secrets.KAMAL_REGISTRY_USERNAME }}
+          kamal-registry-password: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
+          rails-master-key: ${{ secrets.RAILS_MASTER_KEY }}
+          rails-default-public-app-host: ${{ secrets.RAILS_DEFAULT_PUBLIC_APP_HOST }}
+          rails-default-public-app-host-protocol: ${{ secrets.RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL }}
+          
+          # Database configuration
+          database-env-prefix: 'MY_APP'  # Change to your project's prefix
+          database-host: ${{ secrets.DATABASE_HOST }}
+          database-name: ${{ secrets.DATABASE_NAME }}
+          database-username: ${{ secrets.DATABASE_USERNAME }}
+          database-password: ${{ secrets.DATABASE_PASSWORD }}
+          database-port: ${{ secrets.DATABASE_PORT }}
+          
+          # Optional: Redis/Sidekiq (uncomment if needed)
+          # redis-username: ${{ secrets.REDIS_USERNAME }}
+          # redis-password: ${{ secrets.REDIS_PASSWORD }}
+          
+          # Optional: Mail server (uncomment if needed)
+          # mail-username: ${{ secrets.MAIL_USERNAME }}
+          # mail-password: ${{ secrets.MAIL_PASSWORD }}
+          
+          # Optional: AWS S3 (uncomment if needed)
+          # aws-s3-access-key-id: ${{ secrets.AWS_S3_ACCESS_KEY_ID }}
+          # aws-s3-secret-access-key: ${{ secrets.AWS_S3_SECRET_ACCESS_KEY }}
+          # aws-s3-region: ${{ secrets.AWS_S3_REGION }}
+          # aws-s3-bucket-name: ${{ secrets.AWS_S3_NAME }}
+
+      # Notification: Success
+      - name: Notify Deployment Success
+        if: success()
+        uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'success'
+          action-type: 'deploy'
+          environment: ${{ inputs.environment || 'staging' }}
+          update-message-ts: ${{ steps.notify-start.outputs.message-ts }}
+          repository: ${{ github.repository }}
+          repository-url: ${{ github.server_url }}/${{ github.repository }}
+          action-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          actor: ${{ github.actor }}
+          actor-url: https://github.com/${{ github.actor }}
+          workflow-name: ${{ github.workflow }}
+          run-id: ${{ github.run_id }}
+          commit-message: ${{ github.event.head_commit.message }}
+          deployment-duration: ${{ steps.deploy.outputs.deployment-duration }}
+
+      # Notification: Failure
+      - name: Notify Deployment Failure
+        if: failure()
+        uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'failure'
+          action-type: 'deploy'
+          environment: ${{ inputs.environment || 'staging' }}
+          update-message-ts: ${{ steps.notify-start.outputs.message-ts }}
+          repository: ${{ github.repository }}
+          repository-url: ${{ github.server_url }}/${{ github.repository }}
+          action-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          actor: ${{ github.actor }}
+          actor-url: https://github.com/${{ github.actor }}
+          workflow-name: ${{ github.workflow }}
+          run-id: ${{ github.run_id }}
+          commit-message: ${{ github.event.head_commit.message }}
+          error-message: 'Deployment failed - check logs for details' 

@@ -1,0 +1,336 @@
+name: 'Nuxt Kamal v1 Setup'
+description: 'Setup Nuxt frontend applications with Kamal v1 for initial deployment preparation'
+author: 'WCMC DevOps Team'
+
+inputs:
+  environment:
+    description: 'Environment to setup (staging, production)'
+    required: true
+  kamal-version:
+    description: 'Kamal v1 version to use'
+    required: false
+    default: '1.4.0'
+  ruby-version:
+    description: 'Ruby version to use'
+    required: false
+    default: '3.2.0'
+  node-version:
+    description: 'Node.js version to use'
+    required: false
+    default: '22.3.0'
+  working-directory:
+    description: 'Working directory for Nuxt application'
+    required: false
+    default: '.'
+  ssh-private-key:
+    description: 'SSH private key for server access'
+    required: true
+  kamal-registry-username:
+    description: 'Docker registry username'
+    required: true
+  kamal-registry-password:
+    description: 'Docker registry password'
+    required: true
+  gh-token:
+    description: 'GitHub token for package access'
+    required: true
+  web-server-dns-name:
+    description: 'Web server DNS name for SSH connection'
+    required: true
+  # Rails API Integration
+  rails-master-key:
+    description: 'Rails master key for API integration'
+    required: true
+  rails-default-public-app-host:
+    description: 'Rails default public app host'
+    required: true
+  rails-default-public-app-host-protocol:
+    description: 'Rails default public app host protocol'
+    required: true
+  # Frontend-specific secrets
+  frontend-app-name:
+    description: 'Frontend application name'
+    required: true
+  auth-origin:
+    description: 'Authentication origin URL'
+    required: true
+  nuxt-public-rails-api-server:
+    description: 'Nuxt public Rails API server URL'
+    required: true
+  # Azure AD Configuration
+  azure-ad-client-id:
+    description: 'Azure AD Client ID'
+    required: true
+  azure-ad-client-secret:
+    description: 'Azure AD Client Secret'
+    required: true
+  azure-ad-tenant-id:
+    description: 'Azure AD Tenant ID'
+    required: true
+  # WCMC User Management Module
+  wcmc-user-management-secret:
+    description: 'WCMC User Management Secret'
+    required: true
+  wcmc-user-management-rails-api-server:
+    description: 'WCMC User Management Rails API Server URL'
+    required: true
+  # Optional configurations
+  additional-env-vars:
+    description: 'Additional environment variables in KEY=VALUE format, one per line'
+    required: false
+  pre-setup-commands:
+    description: 'Commands to run before setup'
+    required: false
+  post-setup-commands:
+    description: 'Commands to run after successful setup'
+    required: false
+  setup-verbose:
+    description: 'Enable verbose output for Kamal setup'
+    required: false
+    default: 'true'
+
+outputs:
+  setup-status:
+    description: 'Status of the setup operation'
+    value: ${{ steps.setup-result.outputs.status }}
+  setup-duration:
+    description: 'Duration of the setup operation in seconds'
+    value: ${{ steps.setup-result.outputs.duration }}
+  start-time:
+    description: 'Setup start time'
+    value: ${{ steps.set-times.outputs.start-time }}
+  end-time:
+    description: 'Setup end time'
+    value: ${{ steps.set-times.outputs.end-time }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        echo "🔍 Validating Nuxt setup inputs..."
+        
+        # Validate environment
+        if [[ ! "${{ inputs.environment }}" =~ ^(staging|production)$ ]]; then
+          echo "❌ Error: environment must be either 'staging' or 'production'"
+          exit 1
+        fi
+        
+        # Validate working directory
+        if [[ ! -d "${{ inputs.working-directory }}" ]]; then
+          echo "❌ Error: working-directory '${{ inputs.working-directory }}' does not exist"
+          exit 1
+        fi
+        
+        echo "✅ Input validation completed for Nuxt setup"
+
+    - name: Set setup times
+      id: set-times
+      shell: bash
+      run: |
+        start_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        echo "start-time=${start_time}" >> $GITHUB_OUTPUT
+        echo "START_TIME=${start_time}" >> $GITHUB_ENV
+        echo "🕐 Setup started at: ${start_time}"
+
+    - name: Validate required environment variables
+      shell: bash
+      run: |
+        echo "🔧 Validating required environment variables for setup..."
+        required_vars=(
+          "${{ inputs.gh-token }}"
+          "${{ inputs.kamal-registry-password }}"
+          "${{ inputs.kamal-registry-username }}"
+          "${{ inputs.ssh-private-key }}"
+          "${{ inputs.web-server-dns-name }}"
+        )
+        
+        var_names=(
+          "GH_TOKEN"
+          "KAMAL_REGISTRY_PASSWORD"
+          "KAMAL_REGISTRY_USERNAME"
+          "SSH_PRIVATE_KEY"
+          "WEB_SERVER_DNS_NAME"
+        )
+        
+        for i in "${!required_vars[@]}"; do
+          if [[ -z "${required_vars[$i]}" ]]; then
+            echo "❌ Error: ${var_names[$i]} is not set or empty"
+            exit 1
+          else
+            echo "✅ ${var_names[$i]} is set"
+          fi
+        done
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Install Yarn
+      shell: bash
+      run: |
+        echo "📦 Installing Yarn..."
+        npm install -g yarn
+        yarn --version
+
+    - name: Set up Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: ${{ inputs.ruby-version }}
+        bundler-cache: true
+
+    - name: Install Kamal v1
+      shell: bash
+      run: |
+        echo "🚢 Installing Kamal v${{ inputs.kamal-version }}..."
+        gem install kamal -v ${{ inputs.kamal-version }}
+        kamal version
+
+    - name: Set up SSH
+      uses: webfactory/ssh-agent@v0.9.0
+      with:
+        ssh-private-key: ${{ inputs.ssh-private-key }}
+
+    - name: Create environment-specific .env file for Nuxt Frontend
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🔐 Creating environment-specific .env file for Nuxt Frontend..."
+        env_file=".env.${{ inputs.environment }}"
+        
+        # Remove existing env file if it exists
+        rm -f "$env_file"
+        
+        # Core secrets for frontend setup
+        cat <<EOF > "$env_file"
+        RAILS_MASTER_KEY=${{ inputs.rails-master-key }}
+        RAILS_DEFAULT_PUBLIC_APP_HOST=${{ inputs.rails-default-public-app-host }}
+        RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL=${{ inputs.rails-default-public-app-host-protocol }}
+        KAMAL_REGISTRY_USERNAME=${{ inputs.kamal-registry-username }}
+        KAMAL_REGISTRY_PASSWORD=${{ inputs.kamal-registry-password }}
+        FRONTEND_APP_NAME=${{ inputs.frontend-app-name }}
+        AUTH_ORIGIN=${{ inputs.auth-origin }}
+        NUXT_PUBLIC_RAILS_API_SERVER=${{ inputs.nuxt-public-rails-api-server }}
+        NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID=${{ inputs.azure-ad-client-id }}
+        NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_SECRET=${{ inputs.azure-ad-client-secret }}
+        NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_TENANT_ID=${{ inputs.azure-ad-tenant-id }}
+        NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET=${{ inputs.wcmc-user-management-secret }}
+        NUXT_PUBLIC_WCMC_MODULES_WCMC_USER_MANAGEMENT_RAILS_API_SERVER=${{ inputs.wcmc-user-management-rails-api-server }}
+        WEB_SERVER_DNS_NAME=${{ inputs.web-server-dns-name }}
+        GH_TOKEN=${{ inputs.gh-token }}
+        EOF
+        
+        # Add additional environment variables if provided
+        if [[ -n "${{ inputs.additional-env-vars }}" ]]; then
+          echo "" >> "$env_file"
+          echo "# Additional environment variables" >> "$env_file"
+          echo "${{ inputs.additional-env-vars }}" >> "$env_file"
+        fi
+        
+        # Set proper permissions
+        chmod 600 "$env_file"
+        
+        echo "✅ Environment file created: $env_file"
+        echo "📋 Environment file contains $(wc -l < "$env_file") lines"
+        
+        # Display contents for verification (be careful with sensitive data)
+        echo "🔍 Environment file verification:"
+        echo "File exists: $(test -f "$env_file" && echo "Yes" || echo "No")"
+        echo "File permissions: $(stat -c %a "$env_file" 2>/dev/null || stat -f %Lp "$env_file" 2>/dev/null || echo "unknown")"
+
+    - name: Run pre-setup commands
+      if: inputs.pre-setup-commands != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🔧 Running pre-setup commands..."
+        env_file=".env.${{ inputs.environment }}"
+        export $(grep -v '^#' "$env_file" | xargs)
+        ${{ inputs.pre-setup-commands }}
+
+    - name: Set up Kamal v1 for Frontend
+      id: kamal-setup
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🚀 Starting Kamal v1 setup for ${{ inputs.environment }} frontend..."
+        start_time=$(date +%s)
+        
+        env_file=".env.${{ inputs.environment }}"
+        export $(grep -v '^#' "$env_file" | xargs)
+        
+        # Prepare setup command
+        setup_cmd="kamal setup -d ${{ inputs.environment }}"
+        if [[ "${{ inputs.setup-verbose }}" == "true" ]]; then
+          setup_cmd="$setup_cmd --verbose"
+        fi
+        
+        echo "🔄 Running: $setup_cmd"
+        
+        if eval "$setup_cmd"; then
+          end_time=$(date +%s)
+          duration=$((end_time - start_time))
+          echo "setup-duration=${duration}" >> $GITHUB_OUTPUT
+          echo "setup-status=success" >> $GITHUB_OUTPUT
+          echo "✅ Kamal v1 setup completed successfully in ${duration} seconds"
+        else
+          end_time=$(date +%s)
+          duration=$((end_time - start_time))
+          echo "setup-duration=${duration}" >> $GITHUB_OUTPUT
+          echo "setup-status=failed" >> $GITHUB_OUTPUT
+          echo "❌ Kamal v1 setup failed after ${duration} seconds"
+          exit 1
+        fi
+
+    - name: Run post-setup commands
+      if: inputs.post-setup-commands != '' && success()
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🔧 Running post-setup commands..."
+        env_file=".env.${{ inputs.environment }}"
+        export $(grep -v '^#' "$env_file" | xargs)
+        ${{ inputs.post-setup-commands }}
+
+    - name: Set setup end time
+      id: set-end-time
+      if: always()
+      shell: bash
+      run: |
+        end_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        echo "end-time=${end_time}" >> $GITHUB_OUTPUT
+        echo "END_TIME=${end_time}" >> $GITHUB_ENV
+        echo "🕐 Setup ended at: ${end_time}"
+
+    - name: Set setup result
+      id: setup-result
+      if: always()
+      shell: bash
+      run: |
+        if [[ "${{ steps.kamal-setup.outcome }}" == "success" ]]; then
+          echo "status=success" >> $GITHUB_OUTPUT
+        else
+          echo "status=failed" >> $GITHUB_OUTPUT
+        fi
+        
+        # Get duration from setup step
+        duration="${{ steps.kamal-setup.outputs.setup-duration }}"
+        echo "duration=${duration:-unknown}" >> $GITHUB_OUTPUT
+
+    - name: Cleanup environment file
+      if: always()
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🧹 Cleaning up environment file..."
+        env_file=".env.${{ inputs.environment }}"
+        if [[ -f "$env_file" ]]; then
+          rm -f "$env_file"
+          echo "✅ Environment file removed securely"
+        fi
+
+branding:
+  icon: 'server'
+  color: 'blue' 

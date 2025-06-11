@@ -1,0 +1,86 @@
+{
+  "text": "❌ GitHub Action Deploy Failed",
+  "blocks": [
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": "❌ Deploy to ${{ env.ENVIRONMENT }} Failed",
+        "emoji": true
+      }
+    },
+    {
+      "type": "section",
+      "fields": [
+        {
+          "type": "mrkdwn",
+          "text": "*Job*\nDeploy to ${{ env.ENVIRONMENT }}"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Repository*\n<${{ env.REPOSITORY_URL }}|${{ env.REPOSITORY }}>"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Runner*\n${{ env.RUNNER_NAME }}"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Environment*\n${{ env.ENVIRONMENT }}"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Failed At*\n${{ env.END_TIME }}"
+        },
+        {
+          "type": "mrkdwn",
+          "text": "*Triggered By*\n<${{ env.ACTOR_URL }}|${{ env.ACTOR }}>"
+        }
+      ]
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Commit Message*\n${{ env.COMMIT_MESSAGE }}"
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Failure Reason*\n${{ env.FAILURE_REASON }}"
+      }
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "View GitHub Action Run",
+            "emoji": true
+          },
+          "url": "${{ env.ACTION_RUN_URL }}",
+          "style": "danger"
+        }
+      ]
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": "Workflow: ${{ env.WORKFLOW_NAME }} | Run ID: ${{ env.RUN_ID }}"
+        }
+      ]
+    }
+  ],
+  "attachments": [
+    {
+      "color": "#ff0000",
+      "fallback": "GitHub Action: Deploy to ${{ env.ENVIRONMENT }} failed at ${{ env.END_TIME }} (Failure)"
+    }
+  ]
+}

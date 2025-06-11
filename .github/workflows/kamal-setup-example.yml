@@ -1,0 +1,341 @@
+name: Kamal Setup (Initial Deployment)
+
+on:
+  workflow_dispatch:
+    inputs:
+      kamal_version:
+        description: 'Kamal version to use'
+        required: true
+        default: 'v2'
+        type: choice
+        options:
+        - v1
+        - v2
+      application_type:
+        description: 'Application type'
+        required: true
+        default: 'backend'
+        type: choice
+        options:
+        - backend
+        - frontend-v1
+        - frontend-v2
+      environment:
+        description: 'Environment to setup'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+
+jobs:
+  setup-backend-v1:
+    if: inputs.kamal_version == 'v1' && inputs.application_type == 'backend'
+    name: Setup Rails Backend (Kamal v1)
+    runs-on: self-hosted
+    environment: ${{ inputs.environment }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Notification: Start
+      - name: Notify Setup Start
+        id: notify-start
+        uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'started'
+          action-type: 'setup'
+          environment: ${{ inputs.environment }}
+          repository: ${{ github.repository }}
+          repository-url: ${{ github.server_url }}/${{ github.repository }}
+          action-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          actor: ${{ github.actor }}
+          workflow-name: ${{ github.workflow }}
+          run-id: ${{ github.run_id }}
+
+      # Main Setup
+      - name: Setup with Kamal v1
+        id: setup
+        uses: unepwcmc/devops-actions/.github/actions/kamal-v1-setup@v1
+        with:
+          environment: ${{ inputs.environment }}
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          kamal-registry-username: ${{ secrets.KAMAL_REGISTRY_USERNAME }}
+          kamal-registry-password: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
+          rails-master-key: ${{ secrets.RAILS_MASTER_KEY }}
+          rails-default-public-app-host: ${{ secrets.RAILS_DEFAULT_PUBLIC_APP_HOST }}
+          rails-default-public-app-host-protocol: ${{ secrets.RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL }}
+          database-env-prefix: 'MY_APP'
+          database-host: ${{ secrets.DATABASE_HOST }}
+          database-name: ${{ secrets.DATABASE_NAME }}
+          database-username: ${{ secrets.DATABASE_USERNAME }}
+          database-password: ${{ secrets.DATABASE_PASSWORD }}
+
+      # Notification: Success
+      - name: Notify Setup Success
+        if: success()
+        uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'success'
+          action-type: 'setup'
+          environment: ${{ inputs.environment }}
+          update-message-ts: ${{ steps.notify-start.outputs.message-ts }}
+          repository: ${{ github.repository }}
+          workflow-name: ${{ github.workflow }}
+          deployment-duration: ${{ steps.setup.outputs.setup-duration }}
+
+      # Notification: Failure
+      - name: Notify Setup Failure
+        if: failure()
+        uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'failure'
+          action-type: 'setup'
+          environment: ${{ inputs.environment }}
+          update-message-ts: ${{ steps.notify-start.outputs.message-ts }}
+          repository: ${{ github.repository }}
+          workflow-name: ${{ github.workflow }}
+          error-message: 'Setup failed - check logs for details'
+
+  setup-backend-v2:
+    if: inputs.kamal_version == 'v2' && inputs.application_type == 'backend'
+    name: Setup Rails Backend (Kamal v2)
+    runs-on: self-hosted
+    environment: ${{ inputs.environment }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Notification: Start
+      - name: Notify Setup Start
+        id: notify-start
+        uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'started'
+          action-type: 'setup'
+          environment: ${{ inputs.environment }}
+          repository: ${{ github.repository }}
+          repository-url: ${{ github.server_url }}/${{ github.repository }}
+          action-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          actor: ${{ github.actor }}
+          workflow-name: ${{ github.workflow }}
+          run-id: ${{ github.run_id }}
+
+      # Main Setup
+      - name: Setup with Kamal v2
+        id: setup
+        uses: unepwcmc/devops-actions/.github/actions/kamal-v2-setup@v1
+        with:
+          environment: ${{ inputs.environment }}
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          kamal-registry-username: ${{ secrets.KAMAL_REGISTRY_USERNAME }}
+          kamal-registry-password: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
+          rails-master-key: ${{ secrets.RAILS_MASTER_KEY }}
+          rails-default-public-app-host: ${{ secrets.RAILS_DEFAULT_PUBLIC_APP_HOST }}
+          rails-default-public-app-host-protocol: ${{ secrets.RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL }}
+          database-env-prefix: 'MY_APP'
+          database-host: ${{ secrets.DATABASE_HOST }}
+          database-name: ${{ secrets.DATABASE_NAME }}
+          database-username: ${{ secrets.DATABASE_USERNAME }}
+          database-password: ${{ secrets.DATABASE_PASSWORD }}
+
+      # Notification: Success
+      - name: Notify Setup Success
+        if: success()
+        uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'success'
+          action-type: 'setup'
+          environment: ${{ inputs.environment }}
+          update-message-ts: ${{ steps.notify-start.outputs.message-ts }}
+          repository: ${{ github.repository }}
+          workflow-name: ${{ github.workflow }}
+          deployment-duration: ${{ steps.setup.outputs.setup-duration }}
+
+      # Notification: Failure
+      - name: Notify Setup Failure
+        if: failure()
+        uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'failure'
+          action-type: 'setup'
+          environment: ${{ inputs.environment }}
+          update-message-ts: ${{ steps.notify-start.outputs.message-ts }}
+          repository: ${{ github.repository }}
+          workflow-name: ${{ github.workflow }}
+          error-message: 'Setup failed - check logs for details'
+
+  setup-frontend-v1:
+    if: inputs.application_type == 'frontend-v1'
+    name: Setup Nuxt Frontend (Kamal v1)
+    runs-on: self-hosted
+    environment: ${{ inputs.environment }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Notification: Start
+      - name: Notify Setup Start
+        id: notify-start
+        uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'started'
+          action-type: 'setup'
+          environment: ${{ inputs.environment }}
+          repository: ${{ github.repository }}
+          repository-url: ${{ github.server_url }}/${{ github.repository }}
+          action-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          actor: ${{ github.actor }}
+          workflow-name: ${{ github.workflow }}
+          run-id: ${{ github.run_id }}
+
+      # Main Setup
+      - name: Setup Nuxt Frontend
+        id: setup
+        uses: unepwcmc/devops-actions/.github/actions/nuxt-kamal-v1-setup@v1
+        with:
+          environment: ${{ inputs.environment }}
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          kamal-registry-username: ${{ secrets.KAMAL_REGISTRY_USERNAME }}
+          kamal-registry-password: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
+          gh-token: ${{ secrets.GH_TOKEN }}
+          web-server-dns-name: ${{ secrets.WEB_SERVER_DNS_NAME }}
+          rails-master-key: ${{ secrets.RAILS_MASTER_KEY }}
+          rails-default-public-app-host: ${{ secrets.RAILS_DEFAULT_PUBLIC_APP_HOST }}
+          rails-default-public-app-host-protocol: ${{ secrets.RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL }}
+          frontend-app-name: ${{ secrets.FRONTEND_APP_NAME }}
+          auth-origin: ${{ secrets.AUTH_ORIGIN }}
+          nuxt-public-rails-api-server: ${{ secrets.NUXT_PUBLIC_RAILS_API_SERVER }}
+          azure-ad-client-id: ${{ secrets.NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID }}
+          azure-ad-client-secret: ${{ secrets.NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_SECRET }}
+          azure-ad-tenant-id: ${{ secrets.NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_TENANT_ID }}
+          wcmc-user-management-secret: ${{ secrets.NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET }}
+          wcmc-user-management-rails-api-server: ${{ secrets.NUXT_PUBLIC_WCMC_MODULES_WCMC_USER_MANAGEMENT_RAILS_API_SERVER }}
+
+      # Notification: Success
+      - name: Notify Setup Success
+        if: success()
+        uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'success'
+          action-type: 'setup'
+          environment: ${{ inputs.environment }}
+          update-message-ts: ${{ steps.notify-start.outputs.message-ts }}
+          repository: ${{ github.repository }}
+          workflow-name: ${{ github.workflow }}
+          deployment-duration: ${{ steps.setup.outputs.setup-duration }}
+
+      # Notification: Failure
+      - name: Notify Setup Failure
+        if: failure()
+        uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'failure'
+          action-type: 'setup'
+          environment: ${{ inputs.environment }}
+          update-message-ts: ${{ steps.notify-start.outputs.message-ts }}
+          repository: ${{ github.repository }}
+          workflow-name: ${{ github.workflow }}
+          error-message: 'Frontend setup failed - check logs for details'
+
+  setup-frontend-v2:
+    if: inputs.application_type == 'frontend-v2'
+    name: Setup Nuxt Frontend (Kamal v2)
+    runs-on: self-hosted
+    environment: ${{ inputs.environment }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Notification: Start
+      - name: Notify Setup Start
+        id: notify-start
+        uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'started'
+          action-type: 'setup'
+          environment: ${{ inputs.environment }}
+          repository: ${{ github.repository }}
+          repository-url: ${{ github.server_url }}/${{ github.repository }}
+          action-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          actor: ${{ github.actor }}
+          workflow-name: ${{ github.workflow }}
+          run-id: ${{ github.run_id }}
+
+      # Main Setup with Kamal v2
+      - name: Setup Nuxt Frontend (Kamal v2)
+        id: setup
+        uses: unepwcmc/devops-actions/.github/actions/nuxt-kamal-v2-setup@v1
+        with:
+          environment: ${{ inputs.environment }}
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          kamal-registry-username: ${{ secrets.KAMAL_REGISTRY_USERNAME }}
+          kamal-registry-password: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
+          gh-token: ${{ secrets.GH_TOKEN }}
+          web-server-dns-name: ${{ secrets.WEB_SERVER_DNS_NAME }}
+          rails-master-key: ${{ secrets.RAILS_MASTER_KEY }}
+          rails-default-public-app-host: ${{ secrets.RAILS_DEFAULT_PUBLIC_APP_HOST }}
+          rails-default-public-app-host-protocol: ${{ secrets.RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL }}
+          frontend-app-name: ${{ secrets.FRONTEND_APP_NAME }}
+          auth-origin: ${{ secrets.AUTH_ORIGIN }}
+          nuxt-public-rails-api-server: ${{ secrets.NUXT_PUBLIC_RAILS_API_SERVER }}
+          azure-ad-client-id: ${{ secrets.NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID }}
+          azure-ad-client-secret: ${{ secrets.NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_SECRET }}
+          azure-ad-tenant-id: ${{ secrets.NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_TENANT_ID }}
+          wcmc-user-management-secret: ${{ secrets.NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET }}
+          wcmc-user-management-rails-api-server: ${{ secrets.NUXT_PUBLIC_WCMC_MODULES_WCMC_USER_MANAGEMENT_RAILS_API_SERVER }}
+
+      # Notification: Success
+      - name: Notify Setup Success
+        if: success()
+        uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'success'
+          action-type: 'setup'
+          environment: ${{ inputs.environment }}
+          update-message-ts: ${{ steps.notify-start.outputs.message-ts }}
+          repository: ${{ github.repository }}
+          workflow-name: ${{ github.workflow }}
+          deployment-duration: ${{ steps.setup.outputs.setup-duration }}
+
+      # Notification: Failure
+      - name: Notify Setup Failure
+        if: failure()
+        uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'failure'
+          action-type: 'setup'
+          environment: ${{ inputs.environment }}
+          update-message-ts: ${{ steps.notify-start.outputs.message-ts }}
+          repository: ${{ github.repository }}
+          workflow-name: ${{ github.workflow }}
+          error-message: 'Nuxt v2 frontend setup failed - check logs for details' 

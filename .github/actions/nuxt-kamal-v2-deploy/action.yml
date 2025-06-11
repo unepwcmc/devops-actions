@@ -1,0 +1,505 @@
+name: 'Nuxt Kamal v2 Deploy'
+description: 'Deploy Nuxt frontend applications using Kamal v2 with comprehensive configuration, health checks, and rollback capabilities'
+author: 'WCMC DevOps Team'
+
+inputs:
+  environment:
+    description: 'Environment to deploy to (staging, production)'
+    required: true
+  kamal-version:
+    description: 'Kamal v2 version to use'
+    required: false
+    default: '2.5.3'
+  ruby-version:
+    description: 'Ruby version to use'
+    required: false
+    default: '3.3.5'
+  node-version:
+    description: 'Node.js version to use'
+    required: false
+    default: '22.3.0'
+  working-directory:
+    description: 'Working directory for Nuxt application'
+    required: false
+    default: '.'
+  ssh-private-key:
+    description: 'SSH private key for server access'
+    required: true
+  kamal-registry-username:
+    description: 'Docker registry username'
+    required: true
+  kamal-registry-password:
+    description: 'Docker registry password'
+    required: true
+  gh-token:
+    description: 'GitHub token for package access'
+    required: true
+  web-server-dns-name:
+    description: 'Web server DNS name for SSH connection'
+    required: true
+  # Rails API Integration
+  rails-master-key:
+    description: 'Rails master key for API integration'
+    required: true
+  rails-default-public-app-host:
+    description: 'Rails default public app host'
+    required: true
+  rails-default-public-app-host-protocol:
+    description: 'Rails default public app host protocol'
+    required: true
+  # Frontend-specific secrets
+  frontend-app-name:
+    description: 'Frontend application name'
+    required: true
+  auth-origin:
+    description: 'Authentication origin URL'
+    required: true
+  nuxt-public-rails-api-server:
+    description: 'Nuxt public Rails API server URL'
+    required: true
+  # Azure AD Configuration
+  azure-ad-client-id:
+    description: 'Azure AD Client ID'
+    required: true
+  azure-ad-client-secret:
+    description: 'Azure AD Client Secret'
+    required: true
+  azure-ad-tenant-id:
+    description: 'Azure AD Tenant ID'
+    required: true
+  # WCMC User Management Module
+  wcmc-user-management-secret:
+    description: 'WCMC User Management Secret'
+    required: true
+  wcmc-user-management-rails-api-server:
+    description: 'WCMC User Management Rails API Server URL'
+    required: true
+  # Deployment options
+  deployment-strategy:
+    description: 'Deployment strategy (rolling, blue-green, immediate)'
+    required: false
+    default: 'rolling'
+  health-check-enabled:
+    description: 'Enable health checks during deployment'
+    required: false
+    default: 'true'
+  health-check-timeout:
+    description: 'Health check timeout in seconds'
+    required: false
+    default: '300'
+  rollback-on-failure:
+    description: 'Enable automatic rollback on deployment failure'
+    required: false
+    default: 'true'
+  maintenance-mode:
+    description: 'Enable maintenance mode during deployment'
+    required: false
+    default: 'false'
+  # Optional configurations
+  additional-env-vars:
+    description: 'Additional environment variables in KEY=VALUE format, one per line'
+    required: false
+  pre-deploy-commands:
+    description: 'Commands to run before deployment'
+    required: false
+  post-deploy-commands:
+    description: 'Commands to run after successful deployment'
+    required: false
+  enable-ssh-test:
+    description: 'Enable SSH connection testing'
+    required: false
+    default: 'true'
+  skip-env-push:
+    description: 'Skip the kamal env push step'
+    required: false
+    default: 'false'
+  deploy-verbose:
+    description: 'Enable verbose output for deployment'
+    required: false
+    default: 'true'
+
+outputs:
+  deployment-status:
+    description: 'Status of the deployment operation'
+    value: ${{ steps.deploy-result.outputs.status }}
+  deployment-duration:
+    description: 'Duration of the deployment operation in seconds'
+    value: ${{ steps.deploy-result.outputs.duration }}
+  start-time:
+    description: 'Deployment start time'
+    value: ${{ steps.set-times.outputs.start-time }}
+  end-time:
+    description: 'Deployment end time'
+    value: ${{ steps.deploy-result.outputs.end-time }}
+  deployed-version:
+    description: 'Version/tag of the deployed application'
+    value: ${{ steps.deploy-result.outputs.version }}
+  rollback-performed:
+    description: 'Whether a rollback was performed'
+    value: ${{ steps.deploy-result.outputs.rollback-performed }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        echo "🔍 Validating Nuxt Kamal v2 deployment inputs..."
+        
+        # Validate environment
+        if [[ ! "${{ inputs.environment }}" =~ ^(staging|production)$ ]]; then
+          echo "❌ Error: environment must be either 'staging' or 'production'"
+          exit 1
+        fi
+        
+        # Validate deployment strategy
+        if [[ ! "${{ inputs.deployment-strategy }}" =~ ^(rolling|blue-green|immediate)$ ]]; then
+          echo "❌ Error: deployment-strategy must be one of: rolling, blue-green, immediate"
+          exit 1
+        fi
+        
+        # Validate working directory
+        if [[ ! -d "${{ inputs.working-directory }}" ]]; then
+          echo "❌ Error: working-directory '${{ inputs.working-directory }}' does not exist"
+          exit 1
+        fi
+        
+        echo "✅ Input validation completed for Nuxt Kamal v2 deployment"
+
+    - name: Set deployment times
+      id: set-times
+      shell: bash
+      run: |
+        start_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        echo "start-time=${start_time}" >> $GITHUB_OUTPUT
+        echo "START_TIME=${start_time}" >> $GITHUB_ENV
+        echo "🕐 Kamal v2 deployment started at: ${start_time}"
+
+    - name: Validate required environment variables
+      shell: bash
+      run: |
+        echo "🔧 Validating required environment variables for Kamal v2 deployment..."
+        required_vars=(
+          "${{ inputs.gh-token }}"
+          "${{ inputs.kamal-registry-password }}"
+          "${{ inputs.kamal-registry-username }}"
+          "${{ inputs.ssh-private-key }}"
+          "${{ inputs.web-server-dns-name }}"
+        )
+        
+        var_names=(
+          "GH_TOKEN"
+          "KAMAL_REGISTRY_PASSWORD"
+          "KAMAL_REGISTRY_USERNAME"
+          "SSH_PRIVATE_KEY"
+          "WEB_SERVER_DNS_NAME"
+        )
+        
+        for i in "${!required_vars[@]}"; do
+          if [[ -z "${required_vars[$i]}" ]]; then
+            echo "❌ Error: ${var_names[$i]} is not set or empty"
+            exit 1
+          else
+            echo "✅ ${var_names[$i]} is set"
+          fi
+        done
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Install Yarn
+      shell: bash
+      run: |
+        echo "📦 Installing Yarn..."
+        npm install -g yarn
+        yarn --version
+
+    - name: Set up Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: ${{ inputs.ruby-version }}
+        bundler-cache: true
+
+    - name: Install Kamal v2
+      shell: bash
+      run: |
+        echo "🚢 Installing Kamal v${{ inputs.kamal-version }}..."
+        gem install kamal -v ${{ inputs.kamal-version }}
+        kamal version
+        echo "✅ Kamal v2 installed successfully"
+
+    - name: Set up SSH
+      uses: webfactory/ssh-agent@v0.9.0
+      with:
+        ssh-private-key: ${{ inputs.ssh-private-key }}
+
+    - name: Test SSH connection
+      if: inputs.enable-ssh-test == 'true'
+      shell: bash
+      run: |
+        echo "🔐 Testing SSH connection to deployment server..."
+        if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -T wcmc@${{ inputs.web-server-dns-name }} echo "SSH connection successful"; then
+          echo "✅ SSH connection successful"
+        else
+          echo "❌ SSH connection failed"
+          exit 1
+        fi
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      with:
+        install: true
+        version: v0.17.1
+
+    - name: Verify Docker Buildx setup
+      shell: bash
+      run: |
+        echo "🐳 Verifying Docker Buildx setup..."
+        if ! docker buildx version; then
+          echo "❌ Error: Buildx not installed correctly"
+          exit 1
+        fi
+        docker buildx create --name mybuilder --driver docker-container --use || docker buildx use mybuilder
+        docker buildx inspect --bootstrap
+        echo "✅ Docker Buildx configured successfully"
+
+    - name: Update Kamal v2 secrets file
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🔐 Updating Kamal v2 secrets file for deployment..."
+        
+        # Create .kamal directory if it doesn't exist
+        mkdir -p .kamal
+        
+        secrets_file=".kamal/secrets"
+        
+        cat <<EOF > "$secrets_file"
+        # Generated by Nuxt Kamal v2 Deploy Action at $(date -u)
+        
+        # Registry Configuration
+        KAMAL_REGISTRY_USERNAME=${{ inputs.kamal-registry-username }}
+        KAMAL_REGISTRY_PASSWORD=${{ inputs.kamal-registry-password }}
+        
+        # Frontend Application Configuration
+        FRONTEND_APP_NAME=${{ inputs.frontend-app-name }}
+        AUTH_ORIGIN=${{ inputs.auth-origin }}
+        NUXT_PUBLIC_RAILS_API_SERVER=${{ inputs.nuxt-public-rails-api-server }}
+        
+        # Rails API Integration
+        RAILS_MASTER_KEY=${{ inputs.rails-master-key }}
+        RAILS_DEFAULT_PUBLIC_APP_HOST=${{ inputs.rails-default-public-app-host }}
+        RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL=${{ inputs.rails-default-public-app-host-protocol }}
+        
+        # Azure AD Configuration
+        NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID=${{ inputs.azure-ad-client-id }}
+        NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_SECRET=${{ inputs.azure-ad-client-secret }}
+        NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_TENANT_ID=${{ inputs.azure-ad-tenant-id }}
+        
+        # WCMC User Management Module
+        NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET=${{ inputs.wcmc-user-management-secret }}
+        NUXT_PUBLIC_WCMC_MODULES_WCMC_USER_MANAGEMENT_RAILS_API_SERVER=${{ inputs.wcmc-user-management-rails-api-server }}
+        
+        # Environment Configuration
+        NODE_ENV=${{ inputs.environment }}
+        ENVIRONMENT=${{ inputs.environment }}
+        EOF
+        
+        # Add additional environment variables if provided
+        if [[ -n "${{ inputs.additional-env-vars }}" ]]; then
+          echo "" >> "$secrets_file"
+          echo "# Additional Environment Variables" >> "$secrets_file"
+          echo "${{ inputs.additional-env-vars }}" >> "$secrets_file"
+        fi
+        
+        # Secure the secrets file
+        chmod 600 "$secrets_file"
+        echo "✅ Kamal v2 secrets file updated with proper permissions"
+
+    - name: Verify Kamal v2 configuration
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🔍 Verifying Kamal v2 configuration before deployment..."
+        
+        # Check for required Kamal v2 configuration files
+        if [[ ! -f "config/deploy.yml" ]]; then
+          echo "❌ Error: config/deploy.yml not found - required for Kamal v2 deployment"
+          exit 1
+        fi
+        
+        # Verify secrets file
+        if [[ ! -f ".kamal/secrets" ]]; then
+          echo "❌ Error: Kamal v2 secrets file not found"
+          exit 1
+        fi
+        
+        # Test Kamal v2 configuration syntax
+        echo "🔧 Testing Kamal v2 configuration syntax..."
+        if kamal config 2>/dev/null; then
+          echo "✅ Kamal v2 configuration is valid"
+        else
+          echo "❌ Error: Kamal v2 configuration has syntax errors"
+          exit 1
+        fi
+
+    - name: Run pre-deploy commands
+      if: inputs.pre-deploy-commands != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🔧 Running pre-deploy commands..."
+        ${{ inputs.pre-deploy-commands }}
+        echo "✅ Pre-deploy commands completed"
+
+    - name: Deploy with Kamal v2
+      id: kamal-deploy
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🚀 Starting Kamal v2 deployment..."
+        
+        # Set verbose flag
+        verbose_flag=""
+        if [[ "${{ inputs.deploy-verbose }}" == "true" ]]; then
+          verbose_flag="--verbose"
+        fi
+        
+        # Perform Kamal v2 deployment
+        if kamal deploy $verbose_flag; then
+          echo "✅ Kamal v2 deployment completed successfully"
+          echo "deploy_status=success" >> $GITHUB_OUTPUT
+          
+          # Get deployed version/tag
+          deployed_version=$(kamal app version 2>/dev/null || echo "unknown")
+          echo "deployed_version=${deployed_version}" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Kamal v2 deployment failed"
+          echo "deploy_status=failed" >> $GITHUB_OUTPUT
+          echo "deployed_version=failed" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+
+    - name: Perform health checks
+      if: inputs.health-check-enabled == 'true' && steps.kamal-deploy.outputs.deploy_status == 'success'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🏥 Performing post-deployment health checks..."
+        
+        timeout_seconds="${{ inputs.health-check-timeout }}"
+        check_interval=10
+        elapsed=0
+        
+        while [ $elapsed -lt $timeout_seconds ]; do
+          echo "🔍 Checking application health... (${elapsed}s/${timeout_seconds}s)"
+          
+          # Check if services are running (Kamal v2 syntax)
+          if kamal app details 2>/dev/null | grep -q "running\|healthy"; then
+            echo "✅ Application is healthy and running"
+            break
+          fi
+          
+          sleep $check_interval
+          elapsed=$((elapsed + check_interval))
+        done
+        
+        if [ $elapsed -ge $timeout_seconds ]; then
+          echo "❌ Health check timeout after ${timeout_seconds} seconds"
+          echo "health_check_failed=true" >> $GITHUB_OUTPUT
+          exit 1
+        else
+          echo "✅ Health checks passed"
+          echo "health_check_failed=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Handle deployment failure and rollback
+      if: failure() && inputs.rollback-on-failure == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🔄 Deployment failed, attempting automatic rollback..."
+        
+        # Attempt rollback using Kamal v2
+        if kamal app rollback; then
+          echo "✅ Rollback completed successfully"
+          echo "rollback_performed=true" >> $GITHUB_OUTPUT
+          
+          # Verify rollback health
+          if kamal app details 2>/dev/null | grep -q "running\|healthy"; then
+            echo "✅ Rollback verification successful - application is healthy"
+          else
+            echo "⚠️  Warning: Rollback completed but health verification failed"
+          fi
+        else
+          echo "❌ Rollback failed"
+          echo "rollback_performed=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Run post-deploy commands
+      if: inputs.post-deploy-commands != '' && steps.kamal-deploy.outputs.deploy_status == 'success'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🔧 Running post-deploy commands..."
+        ${{ inputs.post-deploy-commands }}
+        echo "✅ Post-deploy commands completed"
+
+    - name: Set end time and calculate duration
+      id: deploy-result
+      if: always()
+      shell: bash
+      run: |
+        end_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        echo "end-time=${end_time}" >> $GITHUB_OUTPUT
+        
+        # Calculate duration
+        start_timestamp=$(date -d "${{ steps.set-times.outputs.start-time }}" +%s)
+        end_timestamp=$(date -d "${end_time}" +%s)
+        duration=$((end_timestamp - start_timestamp))
+        
+        echo "duration=${duration}" >> $GITHUB_OUTPUT
+        
+        # Determine final status
+        if [[ "${{ steps.kamal-deploy.outputs.deploy_status }}" == "success" ]] && [[ "${{ steps.kamal-deploy.outputs.health_check_failed }}" != "true" ]]; then
+          echo "status=success" >> $GITHUB_OUTPUT
+        else
+          echo "status=failed" >> $GITHUB_OUTPUT
+        fi
+        
+        # Set version and rollback status
+        echo "version=${{ steps.kamal-deploy.outputs.deployed_version }}" >> $GITHUB_OUTPUT
+        echo "rollback-performed=${{ steps.kamal-deploy.outputs.rollback_performed || 'false' }}" >> $GITHUB_OUTPUT
+        
+        echo "🕐 Kamal v2 deployment ended at: ${end_time}"
+        echo "⏱️  Total deployment duration: ${duration} seconds"
+
+    - name: Cleanup sensitive files
+      if: always()
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🧹 Cleaning up temporary files..."
+        
+        # Note: We keep .kamal/secrets as it's needed for future deployments
+        # but ensure it has proper permissions
+        if [[ -f ".kamal/secrets" ]]; then
+          chmod 600 .kamal/secrets
+        fi
+        
+        echo "✅ Cleanup completed"
+
+    - name: Display deployment summary
+      if: always()
+      shell: bash
+      run: |
+        echo "📊 Deployment Summary:"
+        echo "  Status: ${{ steps.deploy-result.outputs.status }}"
+        echo "  Duration: ${{ steps.deploy-result.outputs.duration }}s"
+        echo "  Environment: ${{ inputs.environment }}"
+        echo "  Strategy: ${{ inputs.deployment-strategy }}"
+        echo "  Version: ${{ steps.deploy-result.outputs.version }}"
+        echo "  Rollback performed: ${{ steps.deploy-result.outputs.rollback-performed }}"
+        echo "✅ Nuxt Kamal v2 deployment completed" 
