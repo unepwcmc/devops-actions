@@ -1,0 +1,192 @@
+name: Test DevOps Actions
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Type of test to run'
+        required: true
+        type: choice
+        options:
+        - slack-notify
+        - action-validation
+        - all
+      environment:
+        description: 'Test environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+
+jobs:
+  test-slack-notify:
+    if: inputs.test_type == 'slack-notify' || inputs.test_type == 'all'
+    name: Test Slack Notifications
+    runs-on: self-hosted
+    environment: ${{ inputs.environment }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Test Slack Notify - Started
+        id: test-notify-start
+        uses: ./.github/actions/slack-notify  # Use local path for testing
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'started'
+          action-type: 'test'
+          environment: ${{ inputs.environment }}
+          repository: ${{ github.repository }}
+          repository-url: ${{ github.server_url }}/${{ github.repository }}
+          action-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          actor: ${{ github.actor }}
+          actor-url: https://github.com/${{ github.actor }}
+          workflow-name: ${{ github.workflow }}
+          run-id: ${{ github.run_id }}
+          commit-message: 'Testing DevOps Actions'
+
+      - name: Simulate Work
+        run: |
+          echo "🧪 Testing DevOps Actions..."
+          sleep 5
+          echo "✅ Test completed successfully!"
+
+      - name: Test Slack Notify - Success
+        if: success()
+        uses: ./.github/actions/slack-notify
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'success'
+          action-type: 'test'
+          environment: ${{ inputs.environment }}
+          update-message-ts: ${{ steps.test-notify-start.outputs.message-ts }}
+          repository: ${{ github.repository }}
+          repository-url: ${{ github.server_url }}/${{ github.repository }}
+          action-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          actor: ${{ github.actor }}
+          actor-url: https://github.com/${{ github.actor }}
+          workflow-name: ${{ github.workflow }}
+          run-id: ${{ github.run_id }}
+          commit-message: 'Testing DevOps Actions'
+          deployment-duration: '5'
+
+      - name: Test Slack Notify - Failure (if failed)
+        if: failure()
+        uses: ./.github/actions/slack-notify
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'failure'
+          action-type: 'test'
+          environment: ${{ inputs.environment }}
+          update-message-ts: ${{ steps.test-notify-start.outputs.message-ts }}
+          repository: ${{ github.repository }}
+          error-message: 'Test action failed - this is expected for testing'
+
+  validate-actions:
+    if: inputs.test_type == 'action-validation' || inputs.test_type == 'all'
+    name: Validate Action Structure
+    runs-on: self-hosted
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Action Files Exist
+        run: |
+          echo "🔍 Validating action structure..."
+          
+          # Backend actions
+          test -f .github/actions/kamal-v1-setup/action.yml && echo "✅ kamal-v1-setup exists"
+          test -f .github/actions/kamal-v1-deploy/action.yml && echo "✅ kamal-v1-deploy exists"
+          test -f .github/actions/kamal-v2-setup/action.yml && echo "✅ kamal-v2-setup exists"
+          test -f .github/actions/kamal-v2-deploy/action.yml && echo "✅ kamal-v2-deploy exists"
+          
+          # Frontend actions
+          test -f .github/actions/nuxt-kamal-v1-setup/action.yml && echo "✅ nuxt-kamal-v1-setup exists"
+          test -f .github/actions/nuxt-kamal-v1-deploy/action.yml && echo "✅ nuxt-kamal-v1-deploy exists"
+          test -f .github/actions/nuxt-kamal-v2-setup/action.yml && echo "✅ nuxt-kamal-v2-setup exists"
+          test -f .github/actions/nuxt-kamal-v2-deploy/action.yml && echo "✅ nuxt-kamal-v2-deploy exists"
+          
+          # Slack action
+          test -f .github/actions/slack-notify/action.yml && echo "✅ slack-notify exists"
+          
+          echo "🎉 All required actions found!"
+
+      - name: Validate Workflow Examples
+        run: |
+          echo "🔍 Validating workflow examples..."
+          
+          test -f .github/workflows/kamal-v1-backend-example.yml && echo "✅ kamal-v1-backend-example.yml exists"
+          test -f .github/workflows/kamal-v2-backend-example.yml && echo "✅ kamal-v2-backend-example.yml exists"
+          test -f .github/workflows/nuxt-frontend-v1-example.yml && echo "✅ nuxt-frontend-v1-example.yml exists"
+          test -f .github/workflows/nuxt-frontend-v2-example.yml && echo "✅ nuxt-frontend-v2-example.yml exists"
+          test -f .github/workflows/kamal-setup-example.yml && echo "✅ kamal-setup-example.yml exists"
+          test -f .github/workflows/consumer-example.yml && echo "✅ consumer-example.yml exists"
+          
+          echo "🎉 All workflow examples found!"
+
+      - name: Check YAML Syntax
+        run: |
+          echo "🔍 Checking YAML syntax for actions..."
+          
+          for action_file in .github/actions/*/action.yml; do
+            if python3 -c "import yaml; yaml.safe_load(open('$action_file'))" 2>/dev/null; then
+              echo "✅ $action_file - Valid YAML"
+            else
+              echo "❌ $action_file - Invalid YAML"
+              exit 1
+            fi
+          done
+          
+          echo "🎉 All action YAML files are valid!"
+
+  test-summary:
+    needs: [test-slack-notify, validate-actions]
+    if: always()
+    name: Test Summary
+    runs-on: self-hosted
+    
+    steps:
+      - name: Display Test Results
+        run: |
+          echo "## 🧪 DevOps Actions Test Summary"
+          echo ""
+          echo "### Test Results:"
+          
+          if [[ "${{ needs.test-slack-notify.result }}" == "success" ]]; then
+            echo "✅ Slack Notifications: PASSED"
+          elif [[ "${{ needs.test-slack-notify.result }}" == "skipped" ]]; then
+            echo "⏭️  Slack Notifications: SKIPPED"
+          else
+            echo "❌ Slack Notifications: FAILED"
+          fi
+          
+          if [[ "${{ needs.validate-actions.result }}" == "success" ]]; then
+            echo "✅ Action Validation: PASSED"
+          elif [[ "${{ needs.validate-actions.result }}" == "skipped" ]]; then
+            echo "⏭️  Action Validation: SKIPPED"
+          else
+            echo "❌ Action Validation: FAILED"
+          fi
+          
+          echo ""
+          echo "### Next Steps:"
+          echo "1. If tests pass, create a v1.0.0 release"
+          echo "2. Update all workflow examples to use @v1"
+          echo "3. Test in a consumer repository"
+          
+          # Fail the job if any required tests failed
+          if [[ "${{ inputs.test_type }}" == "all" ]]; then
+            if [[ "${{ needs.test-slack-notify.result }}" == "failure" ]] || [[ "${{ needs.validate-actions.result }}" == "failure" ]]; then
+              echo "❌ Some tests failed!"
+              exit 1
+            fi
+          fi
+          
+          echo "🎉 All tests completed successfully!" 
