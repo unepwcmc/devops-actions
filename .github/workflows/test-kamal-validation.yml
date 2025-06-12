@@ -44,13 +44,15 @@ jobs:
           if [[ -f "$setup_action" ]]; then
             echo "✅ Setup action file exists"
             
-            # Validate YAML syntax
-            if python3 -c "import yaml; yaml.safe_load(open('$setup_action'))" 2>/dev/null; then
-              echo "✅ Setup action YAML is valid"
-            else
-              echo "❌ Setup action YAML is invalid"
-              exit 1
-            fi
+            # Check environment info for debugging
+            echo "🔍 Environment info:"
+            echo "  Python version: $(python3 --version)"
+            echo "  Locale: ${LANG:-none} ${LC_ALL:-none}"
+            echo "  File encoding: $(file "$setup_action")"
+            
+            # Validate YAML syntax with detailed error reporting
+            echo "🔍 Validating YAML syntax..."
+            python3 -c "import yaml; import sys; content = open('$setup_action', 'r', encoding='utf-8').read(); yaml.safe_load(content); print('✅ Setup action YAML is valid')" 2>&1 || (echo "❌ Setup action YAML validation failed" && exit 1)
             
             # Check for required fields
             if grep -q "name:" "$setup_action" && grep -q "description:" "$setup_action" && grep -q "runs:" "$setup_action"; then
@@ -69,13 +71,9 @@ jobs:
           if [[ -f "$deploy_action" ]]; then
             echo "✅ Deploy action file exists"
             
-            # Validate YAML syntax
-            if python3 -c "import yaml; yaml.safe_load(open('$deploy_action'))" 2>/dev/null; then
-              echo "✅ Deploy action YAML is valid"
-            else
-              echo "❌ Deploy action YAML is invalid"
-              exit 1
-            fi
+            # Validate YAML syntax with detailed error reporting
+            echo "🔍 Validating YAML syntax..."
+            python3 -c "import yaml; import sys; content = open('$deploy_action', 'r', encoding='utf-8').read(); yaml.safe_load(content); print('✅ Deploy action YAML is valid')" 2>&1 || (echo "❌ Deploy action YAML validation failed" && exit 1)
             
             # Check for required fields
             if grep -q "name:" "$deploy_action" && grep -q "description:" "$deploy_action" && grep -q "runs:" "$deploy_action"; then
