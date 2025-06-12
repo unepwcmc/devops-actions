@@ -279,19 +279,39 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install Python YAML module
+        shell: bash
+        run: |
+          echo "📦 Installing Python YAML module..."
+          pip3 install PyYAML
+
       - name: Test Action Input Validation
         shell: bash
         run: |
           echo "🧪 Testing action input validation..."
           
+          # Determine which action to test
+          if [[ "${{ inputs.app_type }}" == "backend" ]]; then
+            action_file=".github/actions/kamal-${{ inputs.kamal_version }}-setup/action.yml"
+          else
+            action_file=".github/actions/nuxt-kamal-${{ inputs.kamal_version }}-setup/action.yml"
+          fi
+          
+          echo "🔍 Testing action: $action_file"
+          
           # Create a script to test action validation logic
           cat > test_validation.py << 'EOF'
           import yaml
           import sys
+          import os
           
           def test_action_inputs(action_file):
               """Test that action has reasonable input validation"""
               print(f"📋 Testing {action_file}")
+              
+              if not os.path.exists(action_file):
+                  print(f"❌ Action file not found: {action_file}")
+                  return False
               
               try:
                   with open(action_file, 'r') as f:
@@ -304,34 +324,57 @@ jobs:
                           print(f"❌ Missing required field: {field}")
                           return False
                   
+                  print(f"✅ Action name: {action['name']}")
+                  print(f"✅ Action description: {action['description']}")
+                  
                   # Check inputs
                   inputs = action.get('inputs', {})
-                  required_inputs = [
+                  print(f"📋 Found {len(inputs)} input parameters")
+                  
+                  # Check for recommended inputs (not all may be present)
+                  recommended_inputs = [
                       'kamal-version', 'ruby-version', 'ssh-private-key'
                   ]
                   
+                  found_inputs = []
                   missing_inputs = []
-                  for req_input in required_inputs:
-                      if req_input not in inputs:
+                  
+                  for req_input in recommended_inputs:
+                      if req_input in inputs:
+                          found_inputs.append(req_input)
+                      else:
                           missing_inputs.append(req_input)
                   
+                  if found_inputs:
+                      print(f"✅ Found recommended inputs: {found_inputs}")
                   if missing_inputs:
                       print(f"⚠️  Missing recommended inputs: {missing_inputs}")
-                  else:
-                      print("✅ All recommended inputs present")
                   
                   # Check for composite action
-                  if action['runs']['using'] != 'composite':
-                      print(f"⚠️  Action uses {action['runs']['using']} instead of composite")
+                  runs_section = action.get('runs', {})
+                  if runs_section.get('using') != 'composite':
+                      print(f"⚠️  Action uses {runs_section.get('using')} instead of composite")
                   else:
                       print("✅ Uses composite action format")
                   
                   # Check for steps
-                  steps = action['runs'].get('steps', [])
+                  steps = runs_section.get('steps', [])
                   if len(steps) < 3:
                       print(f"⚠️  Only {len(steps)} steps found, expected more for setup action")
                   else:
                       print(f"✅ Has {len(steps)} steps")
+                  
+                  # Check for required input validation
+                  validation_found = False
+                  for step in steps:
+                      if 'run' in step and 'validate' in step.get('run', '').lower():
+                          validation_found = True
+                          break
+                  
+                  if validation_found:
+                      print("✅ Contains input validation logic")
+                  else:
+                      print("⚠️  No obvious input validation found")
                   
                   return True
                   
@@ -339,16 +382,13 @@ jobs:
                   print(f"❌ Error reading action file: {e}")
                   return False
           
-          # Test the relevant action
-          app_type = "${{ inputs.app_type }}"
-          kamal_version = "${{ inputs.kamal_version }}"
+          # Test the action file
+          action_file = sys.argv[1] if len(sys.argv) > 1 else None
           
-          if app_type == "backend":
-              action_file = f".github/actions/kamal-{kamal_version}-setup/action.yml"
-          else:
-              action_file = f".github/actions/nuxt-kamal-{kamal_version}-setup/action.yml"
+          if not action_file:
+              print("❌ No action file specified")
+              sys.exit(1)
           
-          print(f"🔍 Testing action: {action_file}")
           success = test_action_inputs(action_file)
           
           if success:
@@ -358,7 +398,10 @@ jobs:
               sys.exit(1)
           EOF
           
-          python3 test_validation.py
+          # Run the validation
+          python3 test_validation.py "$action_file"
+          
+          # Cleanup
           rm test_validation.py
 
   test-summary:
