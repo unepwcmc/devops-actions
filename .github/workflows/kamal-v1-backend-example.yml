@@ -1,8 +1,6 @@
 name: Kamal v1 Backend Deployment
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       environment:

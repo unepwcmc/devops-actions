@@ -1,13 +1,19 @@
 # This is an example workflow for consuming repositories
 # Copy this to your project's .github/workflows/ directory and customize
+# 
+# IMPORTANT: This workflow is for REFERENCE ONLY in the devops-actions repository
+# When you copy it to your consumer repository, you can uncomment the push triggers:
+#
+# on:
+#   push:
+#     branches:
+#       - main        # Deploy to production
+#       - staging     # Deploy to staging
+#   workflow_dispatch:
 
-name: Deploy Rails Application
+name: Deploy Rails Application (Example - Manual Only)
 
 on:
-  push:
-    branches:
-      - main        # Deploy to production
-      - staging     # Deploy to staging
   workflow_dispatch:
     inputs:
       environment:
