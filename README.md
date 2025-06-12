@@ -419,7 +419,7 @@ Use semantic versioning with tags:
 
 ```yaml
 uses: unepwcmc/devops-actions/.github/actions/kamal-v2-deploy@v1
-uses: unepwcmc/devops-actions/.github/actions/kamal-v2-deploy@v1.2.0
+uses: unepwcmc/devops-actions/.github/actions/kamal-v2-deploy@v1
 uses: unepwcmc/devops-actions/.github/actions/kamal-v2-deploy@main  # latest
 ```
 

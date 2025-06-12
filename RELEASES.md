@@ -1,41 +1,52 @@
 # Release Strategy
 
-## Versioning
+## Early Development Versioning
 
-This repository follows semantic versioning for releases.
+This repository is currently in **early development** and uses a simplified versioning strategy.
 
-### Version Format
-- **Major** (v1.0.0): Breaking changes, new action structure
-- **Minor** (v1.1.0): New features, additional inputs, backward compatible
-- **Patch** (v1.0.1): Bug fixes, security updates, no breaking changes
+### Current Approach
+- **v1**: Single rolling tag that points to the latest stable version
+- **main**: Development branch with latest changes
+- **No semver yet**: We'll adopt semantic versioning (v1.0.0, v1.1.0, etc.) once the actions are more mature
+
+### Why v1 Only?
+- **Simplicity**: Teams reference `@v1` without worrying about patch versions
+- **Flexibility**: We can iterate quickly without version management overhead
+- **Standard Practice**: Most GitHub Actions start with a single v1 tag
+- **Early Stage**: Actions are still evolving rapidly
+
+## Usage
+
+Teams should reference actions using the `v1` tag:
+```yaml
+uses: unepwcmc/devops-actions/.github/actions/kamal-v2-setup@v1
+uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+```
 
 ## Release Process
 
-### 1. Create Release Branch
-```bash
-git checkout -b release/v1.1.0
-# Make final changes
-git commit -m "🔖 Prepare release v1.1.0"
-git push origin release/v1.1.0
-```
+### Current Process
+1. Make changes on feature branches
+2. Merge to `main` via PR
+3. Update `v1` tag to point to latest `main`
+4. Test and validate in staging environments
 
-### 2. Create GitHub Release
-1. Create release from branch
-2. Generate release notes
-3. Tag with version number
-4. Mark as latest release
+### Future Process (When Mature)
+We'll adopt semantic versioning when:
+- Actions are stable and widely adopted
+- Breaking changes need careful management
+- Teams need to pin to specific versions
 
-### 3. Update Action References
-Teams should update their workflows to use the new version:
-```yaml
-uses: unepwcmc/devops-actions/.github/actions/kamal-v2-setup@v1.1.0
-```
+**Future versioning will follow:**
+- **Major** (v2.0.0): Breaking changes, new action structure
+- **Minor** (v2.1.0): New features, additional inputs, backward compatible
+- **Patch** (v2.0.1): Bug fixes, security updates, no breaking changes
 
-## Current Releases
+## Current Release
 
-### v1.0.0 (Latest)
-**Release Date**: December 2024
-**Status**: Stable
+### v1 (Current)
+**Status**: Early Development - Active
+**Last Updated**: December 2024
 
 **Features:**
 - ✅ Kamal v1 and v2 support
@@ -52,14 +63,9 @@ uses: unepwcmc/devops-actions/.github/actions/kamal-v2-setup@v1.1.0
 - `nuxt-kamal-v2-setup` / `nuxt-kamal-v2-deploy`
 - `slack-notify`
 
-**Breaking Changes from v0.x:**
-- Action paths changed to include version in name
-- Input parameter names standardized
-- Secret file structure updated
+## Migration Guide
 
-## Upgrade Guide
-
-### From Manual Workflows to v1.0.0
+### From Manual Workflows to v1
 
 **Step 1**: Replace manual Kamal commands
 ```diff
@@ -79,51 +85,17 @@ uses: unepwcmc/devops-actions/.github/actions/kamal-v2-setup@v1.1.0
 
 **Step 3**: Test in staging environment first
 
-### Future Upgrade Considerations
-
-**v1.x to v2.x (Future)**
-- May include Kamal v3 support
-- Potential input parameter changes
-- Updated security requirements
-
 ## Maintenance Schedule
 
 ### Regular Updates
-- **Monthly**: Dependency updates and security patches
-- **Quarterly**: Kamal version updates and feature additions
-- **Annually**: Major version releases with breaking changes
+- **Weekly**: Bug fixes and minor improvements to v1 tag
+- **Monthly**: Feature additions and dependency updates
+- **As Needed**: Security patches and critical fixes
 
-### Security Updates
-- Applied immediately when discovered
-- Patch releases created within 24 hours
-- Teams notified via Slack and GitHub
-
-## Communication
-
-### Release Notifications
-- GitHub releases with detailed changelog
-- Slack announcements in #devops channel
-- Documentation updates in USAGE.md
-
-### Migration Support
-- 2-week notice for breaking changes
-- Migration guides provided
-- DevOps team available for assistance
-
-## Rollback Strategy
-
-### Emergency Rollback
-If critical issues are found:
-1. Revert to previous stable version tag
-2. Notify all teams immediately
-3. Create hotfix for issues
-4. Release patch version
-
-### Version Pinning
-Teams can pin to specific versions:
-```yaml
-uses: unepwcmc/devops-actions/.github/actions/kamal-v2-setup@v1.0.0
-```
+### Communication
+- **GitHub releases**: For significant updates
+- **Slack notifications**: For breaking changes or important updates
+- **Documentation updates**: Keep USAGE.md current
 
 ## Testing Strategy
 
@@ -135,4 +107,18 @@ uses: unepwcmc/devops-actions/.github/actions/kamal-v2-setup@v1.0.0
 ### Release Validation
 - Automated testing pipeline runs on all PRs
 - Manual testing in staging environments
-- Community feedback period for RCs 
+- Community feedback via issues and discussions
+
+## Future Roadmap
+
+### When We'll Move to Semantic Versioning
+- Multiple teams actively using the actions
+- Need for stable API contracts
+- Breaking changes require careful planning
+- Actions reach production maturity
+
+### Transition Plan
+1. Announce semantic versioning adoption
+2. Create v1.0.0 from current v1
+3. Maintain v1 as alias to latest v1.x
+4. Provide migration timeline for teams 

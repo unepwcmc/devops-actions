@@ -263,7 +263,7 @@ AWS_S3_BUCKET_NAME             # S3 bucket name
 - ✅ Implement proper monitoring
 
 ### Maintenance
-- ✅ Pin to specific action versions (`@v1.0.0`)
+- ✅ Simple versioning with `@v1` tag (early development approach)
 - ✅ Test changes in staging first
 - ✅ Keep Kamal versions updated
 - ✅ Monitor deployment metrics
