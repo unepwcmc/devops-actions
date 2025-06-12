@@ -1,0 +1,276 @@
+# DevOps Actions Usage Guide
+
+## Quick Start
+
+This repository provides centralized, reusable GitHub Actions for deploying Rails applications with Kamal (v1 and v2) and Slack notifications.
+
+## Basic Implementation
+
+### 1. Backend Rails Application with Kamal v2
+
+```yaml
+name: Deploy to Staging
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Kamal v2
+        uses: unepwcmc/devops-actions/.github/actions/kamal-v2-setup@v1
+        with:
+          environment: staging
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          kamal-registry-username: ${{ secrets.KAMAL_REGISTRY_USERNAME }}
+          kamal-registry-password: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
+          rails-master-key: ${{ secrets.RAILS_MASTER_KEY }}
+          database-host: ${{ secrets.DATABASE_HOST }}
+          database-name: ${{ secrets.DATABASE_NAME }}
+          database-username: ${{ secrets.DATABASE_USERNAME }}
+          database-password: ${{ secrets.DATABASE_PASSWORD }}
+          
+      - name: Deploy with Kamal v2
+        uses: unepwcmc/devops-actions/.github/actions/kamal-v2-deploy@v1
+        with:
+          environment: staging
+          deployment-strategy: rolling
+          
+      - name: Notify Slack
+        if: always()
+        uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+        with:
+          slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          notification-type: ${{ job.status == 'success' && 'success' || 'failure' }}
+          action-type: deploy
+          environment: staging
+```
+
+### 2. Frontend Nuxt Application with Kamal v1
+
+```yaml
+name: Deploy Nuxt Frontend
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Nuxt Kamal v1
+        uses: unepwcmc/devops-actions/.github/actions/nuxt-kamal-v1-setup@v1
+        with:
+          environment: production
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          kamal-registry-username: ${{ secrets.KAMAL_REGISTRY_USERNAME }}
+          kamal-registry-password: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
+          nuxt-api-base-url: ${{ secrets.NUXT_API_BASE_URL }}
+          nuxt-public-app-url: ${{ secrets.NUXT_PUBLIC_APP_URL }}
+          azure-ad-client-id: ${{ secrets.AZURE_AD_CLIENT_ID }}
+          azure-ad-client-secret: ${{ secrets.AZURE_AD_CLIENT_SECRET }}
+          azure-ad-tenant-id: ${{ secrets.AZURE_AD_TENANT_ID }}
+          
+      - name: Deploy Nuxt Application
+        uses: unepwcmc/devops-actions/.github/actions/nuxt-kamal-v1-deploy@v1
+        with:
+          environment: production
+          enable-health-checks: true
+```
+
+## Advanced Configuration
+
+### Multi-Environment Setup
+
+```yaml
+name: Deploy to Multiple Environments
+on:
+  push:
+    branches: [main, staging]
+
+jobs:
+  determine-environment:
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.env.outputs.environment }}
+    steps:
+      - id: env
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "environment=production" >> $GITHUB_OUTPUT
+          else
+            echo "environment=staging" >> $GITHUB_OUTPUT
+          fi
+
+  deploy:
+    needs: determine-environment
+    runs-on: ubuntu-latest
+    environment: ${{ needs.determine-environment.outputs.environment }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Kamal
+        uses: unepwcmc/devops-actions/.github/actions/kamal-v2-setup@v1
+        with:
+          environment: ${{ needs.determine-environment.outputs.environment }}
+          # ... other secrets
+          
+      - name: Deploy
+        uses: unepwcmc/devops-actions/.github/actions/kamal-v2-deploy@v1
+        with:
+          environment: ${{ needs.determine-environment.outputs.environment }}
+          deployment-strategy: ${{ needs.determine-environment.outputs.environment == 'production' && 'blue-green' || 'rolling' }}
+```
+
+### Database Migration Integration
+
+```yaml
+      - name: Setup Kamal with Migrations
+        uses: unepwcmc/devops-actions/.github/actions/kamal-v2-setup@v1
+        with:
+          environment: staging
+          pre-setup-commands: |
+            echo "Running database migrations..."
+            bundle exec rails db:migrate
+          post-setup-commands: |
+            echo "Warming up application..."
+            curl -f https://myapp.staging.com/health || echo "Health check failed"
+          # ... other configuration
+```
+
+## Required Secrets Configuration
+
+### Core Deployment Secrets
+```
+SSH_PRIVATE_KEY                 # SSH key for server access
+KAMAL_REGISTRY_USERNAME         # Docker registry username  
+KAMAL_REGISTRY_PASSWORD         # Docker registry password
+RAILS_MASTER_KEY               # Rails master key
+```
+
+### Database Configuration
+```
+DATABASE_HOST                  # Database hostname
+DATABASE_NAME                  # Database name
+DATABASE_USERNAME              # Database username
+DATABASE_PASSWORD              # Database password
+DATABASE_PORT                  # Database port (default: 5432)
+```
+
+### Slack Notifications
+```
+SLACK_WEBHOOK_URL              # Slack webhook for notifications
+```
+
+### Frontend Specific (Nuxt)
+```
+NUXT_API_BASE_URL              # Backend API URL
+NUXT_PUBLIC_APP_URL            # Public frontend URL
+AZURE_AD_CLIENT_ID             # Azure AD client ID
+AZURE_AD_CLIENT_SECRET         # Azure AD client secret
+AZURE_AD_TENANT_ID             # Azure AD tenant ID
+```
+
+### AWS Integration (Optional)
+```
+AWS_ACCESS_KEY_ID              # AWS access key
+AWS_SECRET_ACCESS_KEY          # AWS secret key
+AWS_REGION                     # AWS region
+AWS_S3_BUCKET_NAME             # S3 bucket name
+```
+
+## Migration Guide
+
+### From Manual Kamal to DevOps Actions
+
+**Before:**
+```yaml
+- name: Deploy with Kamal
+  run: |
+    # 50+ lines of setup and deployment logic
+    gem install kamal
+    mkdir -p .kamal
+    echo "KAMAL_REGISTRY_USERNAME=${{ secrets.KAMAL_REGISTRY_USERNAME }}" > .kamal/secrets
+    # ... many more lines
+    kamal setup
+    kamal deploy
+```
+
+**After:**
+```yaml
+- name: Setup Kamal
+  uses: unepwcmc/devops-actions/.github/actions/kamal-v2-setup@v1
+  with:
+    environment: staging
+    # ... configuration
+
+- name: Deploy
+  uses: unepwcmc/devops-actions/.github/actions/kamal-v2-deploy@v1
+  with:
+    environment: staging
+```
+
+**Benefits:**
+- ✅ **90% reduction** in workflow complexity
+- ✅ **Centralized maintenance** and updates
+- ✅ **Standardized practices** across all projects
+- ✅ **Built-in error handling** and security
+- ✅ **Comprehensive validation** and health checks
+
+## Troubleshooting
+
+### Common Issues
+
+1. **SSH Connection Failures**
+   - Ensure SSH key is properly formatted in secrets
+   - Verify server hostnames in Kamal config
+   - Check firewall settings
+
+2. **Docker Registry Issues**
+   - Verify registry credentials
+   - Check Docker registry URL format
+   - Ensure proper permissions
+
+3. **Database Connection Problems**
+   - Verify database credentials
+   - Check database hostname accessibility
+   - Ensure database exists
+
+### Getting Help
+
+1. **Check Action Logs**: Detailed logging is built into all actions
+2. **Review Configuration**: Ensure all required secrets are set
+3. **Test Locally**: Use `kamal config validate` locally first
+4. **Contact DevOps Team**: For WCMC-specific configuration issues
+
+## Best Practices
+
+### Security
+- ✅ Use environment-specific secrets
+- ✅ Rotate credentials regularly  
+- ✅ Limit SSH key access
+- ✅ Use least-privilege principles
+
+### Deployment Strategy
+- ✅ Use `rolling` for staging environments
+- ✅ Use `blue-green` for production
+- ✅ Enable health checks in production
+- ✅ Implement proper monitoring
+
+### Maintenance
+- ✅ Pin to specific action versions (`@v1.0.0`)
+- ✅ Test changes in staging first
+- ✅ Keep Kamal versions updated
+- ✅ Monitor deployment metrics
+
+## Support
+
+For questions or issues:
+- **Documentation**: Check this guide and action READMEs
+- **Issues**: Create GitHub issues for bugs or feature requests
+- **DevOps Team**: Contact for WCMC-specific configuration help 
