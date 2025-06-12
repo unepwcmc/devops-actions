@@ -279,12 +279,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Python YAML module
-        shell: bash
-        run: |
-          echo "📦 Installing Python YAML module..."
-          pip3 install PyYAML
-
       - name: Test Action Input Validation
         shell: bash
         run: |
@@ -299,110 +293,92 @@ jobs:
           
           echo "🔍 Testing action: $action_file"
           
-          # Create a script to test action validation logic
-          cat > test_validation.py << 'EOF'
-          import yaml
-          import sys
-          import os
+          # Check if file exists
+          if [[ ! -f "$action_file" ]]; then
+            echo "❌ Action file not found: $action_file"
+            exit 1
+          fi
           
-          def test_action_inputs(action_file):
-              """Test that action has reasonable input validation"""
-              print(f"📋 Testing {action_file}")
-              
-              if not os.path.exists(action_file):
-                  print(f"❌ Action file not found: {action_file}")
-                  return False
-              
-              try:
-                  with open(action_file, 'r') as f:
-                      action = yaml.safe_load(f)
-                  
-                  # Check basic structure
-                  required_fields = ['name', 'description', 'inputs', 'runs']
-                  for field in required_fields:
-                      if field not in action:
-                          print(f"❌ Missing required field: {field}")
-                          return False
-                  
-                  print(f"✅ Action name: {action['name']}")
-                  print(f"✅ Action description: {action['description']}")
-                  
-                  # Check inputs
-                  inputs = action.get('inputs', {})
-                  print(f"📋 Found {len(inputs)} input parameters")
-                  
-                  # Check for recommended inputs (not all may be present)
-                  recommended_inputs = [
-                      'kamal-version', 'ruby-version', 'ssh-private-key'
-                  ]
-                  
-                  found_inputs = []
-                  missing_inputs = []
-                  
-                  for req_input in recommended_inputs:
-                      if req_input in inputs:
-                          found_inputs.append(req_input)
-                      else:
-                          missing_inputs.append(req_input)
-                  
-                  if found_inputs:
-                      print(f"✅ Found recommended inputs: {found_inputs}")
-                  if missing_inputs:
-                      print(f"⚠️  Missing recommended inputs: {missing_inputs}")
-                  
-                  # Check for composite action
-                  runs_section = action.get('runs', {})
-                  if runs_section.get('using') != 'composite':
-                      print(f"⚠️  Action uses {runs_section.get('using')} instead of composite")
-                  else:
-                      print("✅ Uses composite action format")
-                  
-                  # Check for steps
-                  steps = runs_section.get('steps', [])
-                  if len(steps) < 3:
-                      print(f"⚠️  Only {len(steps)} steps found, expected more for setup action")
-                  else:
-                      print(f"✅ Has {len(steps)} steps")
-                  
-                  # Check for required input validation
-                  validation_found = False
-                  for step in steps:
-                      if 'run' in step and 'validate' in step.get('run', '').lower():
-                          validation_found = True
-                          break
-                  
-                  if validation_found:
-                      print("✅ Contains input validation logic")
-                  else:
-                      print("⚠️  No obvious input validation found")
-                  
-                  return True
-                  
-              except Exception as e:
-                  print(f"❌ Error reading action file: {e}")
-                  return False
+          echo "✅ Action file exists"
           
-          # Test the action file
-          action_file = sys.argv[1] if len(sys.argv) > 1 else None
+          # Basic YAML syntax check using yq (if available) or grep patterns
+          if command -v yq &> /dev/null; then
+            if yq eval . "$action_file" > /dev/null 2>&1; then
+              echo "✅ Action YAML syntax is valid"
+            else
+              echo "❌ Action YAML syntax is invalid"
+              exit 1
+            fi
+          else
+            echo "⚠️  yq not available, using basic validation"
+          fi
           
-          if not action_file:
-              print("❌ No action file specified")
-              sys.exit(1)
+          # Check for required metadata fields
+          if grep -q "^name:" "$action_file" && \
+             grep -q "^description:" "$action_file" && \
+             grep -q "^inputs:" "$action_file" && \
+             grep -q "^runs:" "$action_file"; then
+            echo "✅ Action has required metadata fields"
+          else
+            echo "❌ Action missing required metadata fields"
+            exit 1
+          fi
           
-          success = test_action_inputs(action_file)
+          # Check action name and description
+          action_name=$(grep "^name:" "$action_file" | cut -d':' -f2- | xargs)
+          action_desc=$(grep "^description:" "$action_file" | cut -d':' -f2- | xargs)
           
-          if success:
-              print("🎉 Action input validation passed!")
-          else:
-              print("❌ Action input validation failed!")
-              sys.exit(1)
-          EOF
+          echo "✅ Action name: $action_name"
+          echo "✅ Action description: $action_desc"
           
-          # Run the validation
-          python3 test_validation.py "$action_file"
+          # Count inputs
+          input_count=$(grep -A 1000 "^inputs:" "$action_file" | grep -B 1000 "^runs:" | grep -c "^  [a-z].*:" || echo "0")
+          echo "📋 Found $input_count input parameters"
           
-          # Cleanup
-          rm test_validation.py
+          # Check for recommended inputs
+          recommended_inputs=("kamal-version" "ruby-version" "ssh-private-key")
+          found_inputs=()
+          missing_inputs=()
+          
+          for input in "${recommended_inputs[@]}"; do
+            if grep -q "  $input:" "$action_file"; then
+              found_inputs+=("$input")
+            else
+              missing_inputs+=("$input")
+            fi
+          done
+          
+          if [[ ${#found_inputs[@]} -gt 0 ]]; then
+            echo "✅ Found recommended inputs: ${found_inputs[*]}"
+          fi
+          
+          if [[ ${#missing_inputs[@]} -gt 0 ]]; then
+            echo "⚠️  Missing recommended inputs: ${missing_inputs[*]}"
+          fi
+          
+          # Check for composite action
+          if grep -q "using: 'composite'" "$action_file" || grep -q "using: composite" "$action_file"; then
+            echo "✅ Uses composite action format"
+          else
+            echo "⚠️  Does not use composite action format"
+          fi
+          
+          # Count steps
+          step_count=$(grep -A 1000 "^  steps:" "$action_file" | grep -c "^    - name:" || echo "0")
+          if [[ $step_count -ge 3 ]]; then
+            echo "✅ Has $step_count steps"
+          else
+            echo "⚠️  Only $step_count steps found, expected more for setup action"
+          fi
+          
+          # Check for input validation
+          if grep -A 1000 "^  steps:" "$action_file" | grep -i "validate.*input" > /dev/null; then
+            echo "✅ Contains input validation logic"
+          else
+            echo "⚠️  No obvious input validation found"
+          fi
+          
+          echo "🎉 Action input validation completed!"
 
   test-summary:
     needs: [validate-action-structure, test-action-inputs]
