@@ -188,39 +188,39 @@ runs:
       shell: bash
       run: |
         echo "🔍 Validating deployment inputs..."
-        
+
         # Validate environment
         if [[ ! "${{ inputs.environment }}" =~ ^(staging|production)$ ]]; then
           echo "❌ Error: environment must be either 'staging' or 'production'"
           exit 1
         fi
-        
+
         # Validate deployment strategy
         if [[ ! "${{ inputs.deployment-strategy }}" =~ ^(rolling|blue-green|immediate)$ ]]; then
           echo "❌ Error: deployment-strategy must be one of: rolling, blue-green, immediate"
           exit 1
         fi
-        
+
         # Validate working directory
         if [[ ! -d "${{ inputs.working-directory }}" ]]; then
           echo "❌ Error: working-directory '${{ inputs.working-directory }}' does not exist"
           exit 1
         fi
-        
+
         # Validate required files
         dockerfile_path="${{ inputs.working-directory }}/${{ inputs.dockerfile-path }}"
         kamal_config_path="${{ inputs.working-directory }}/${{ inputs.kamal-config-path }}"
-        
+
         if [[ ! -f "$dockerfile_path" ]]; then
           echo "❌ Error: Dockerfile not found at '$dockerfile_path'"
           exit 1
         fi
-        
+
         if [[ ! -f "$kamal_config_path" ]]; then
           echo "❌ Error: Kamal config not found at '$kamal_config_path'"
           exit 1
         fi
-        
+
         echo "✅ Input validation completed"
 
     - name: Set up Ruby
@@ -262,7 +262,7 @@ runs:
           echo "❌ Error: Buildx not installed correctly"
           exit 1
         fi
-        
+
         docker buildx create --name kamal-deploy-builder --driver docker-container --use 2>/dev/null || docker buildx use kamal-deploy-builder
         docker buildx inspect --bootstrap
         echo "✅ Buildx configured successfully"
@@ -274,11 +274,11 @@ runs:
         echo "🔐 Creating Kamal secrets file..."
         mkdir -p .kamal
         secrets_file=".kamal/secrets.${{ inputs.environment }}"
-        
+
         # Create secrets file with proper permissions
         touch "$secrets_file"
         chmod 600 "$secrets_file"
-        
+
         # Base secrets
         cat <<EOF > "$secrets_file"
         KAMAL_REGISTRY_USERNAME=${{ inputs.kamal-registry-username }}
@@ -290,7 +290,7 @@ runs:
         ${{ inputs.database-env-prefix }}_DATABASE_PASSWORD=${{ inputs.database-password }}
         ${{ inputs.database-env-prefix }}_DATABASE_PORT=${{ inputs.database-port }}
         EOF
-        
+
         # Add Redis configuration if provided
         if [[ -n "${{ inputs.redis-username }}" && -n "${{ inputs.redis-password }}" ]]; then
           echo "REDIS_USERNAME=${{ inputs.redis-username }}" >> "$secrets_file"
@@ -298,14 +298,14 @@ runs:
           echo "SIDEKIQ_REDIS_URL=redis://${{ inputs.redis-username }}:${{ inputs.redis-password }}@${{ inputs.redis-host }}:${{ inputs.redis-port }}/${{ inputs.redis-database }}" >> "$secrets_file"
           echo "✅ Added Redis configuration with Sidekiq URL"
         fi
-        
+
         # Add Mail configuration if provided
         if [[ -n "${{ inputs.mail-username }}" && -n "${{ inputs.mail-password }}" ]]; then
           echo "MAIL_USERNAME=${{ inputs.mail-username }}" >> "$secrets_file"
           echo "MAIL_PASSWORD=${{ inputs.mail-password }}" >> "$secrets_file"
           echo "✅ Added Mail server configuration"
         fi
-        
+
         # Add AWS general secrets if provided
         if [[ -n "${{ inputs.aws-access-key-id }}" ]]; then
           echo "AWS_ACCESS_KEY_ID=${{ inputs.aws-access-key-id }}" >> "$secrets_file"
@@ -313,7 +313,7 @@ runs:
           echo "AWS_REGION=${{ inputs.aws-region }}" >> "$secrets_file"
           echo "✅ Added AWS general configuration"
         fi
-        
+
         # Add AWS S3 specific secrets if provided
         if [[ -n "${{ inputs.aws-s3-access-key-id }}" ]]; then
           echo "AWS_S3_ACCESS_KEY_ID=${{ inputs.aws-s3-access-key-id }}" >> "$secrets_file"
@@ -322,13 +322,13 @@ runs:
           echo "AWS_S3_NAME=${{ inputs.aws-s3-bucket-name }}" >> "$secrets_file"
           echo "✅ Added AWS S3 configuration"
         fi
-        
+
         # Add Frontend Integration if provided
         if [[ -n "${{ inputs.frontend-app-name }}" ]]; then
           echo "FRONTEND_APP_NAME=${{ inputs.frontend-app-name }}" >> "$secrets_file"
           echo "✅ Added Frontend integration configuration"
         fi
-        
+
         # Add Azure AD configuration if provided
         if [[ -n "${{ inputs.azure-ad-client-id }}" ]]; then
           echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID=${{ inputs.azure-ad-client-id }}" >> "$secrets_file"
@@ -336,13 +336,13 @@ runs:
           echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_TENANT_ID=${{ inputs.azure-ad-tenant-id }}" >> "$secrets_file"
           echo "✅ Added Azure AD configuration for WCMC User Management"
         fi
-        
+
         # Add WCMC User Management configuration if provided
         if [[ -n "${{ inputs.wcmc-user-management-secret }}" ]]; then
           echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET=${{ inputs.wcmc-user-management-secret }}" >> "$secrets_file"
           echo "✅ Added WCMC User Management configuration"
         fi
-        
+
         # Add additional secrets if provided
         if [[ -n "${{ inputs.additional-secrets }}" ]]; then
           echo "" >> "$secrets_file"
@@ -350,7 +350,7 @@ runs:
           echo "${{ inputs.additional-secrets }}" >> "$secrets_file"
           echo "✅ Added additional project-specific secrets"
         fi
-        
+
         echo "✅ Secrets file created"
 
     - name: Get current deployment info
@@ -360,7 +360,7 @@ runs:
       run: |
         echo "📋 Getting current deployment information..."
         export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
-        
+
         # Get current version/container info for potential rollback
         if kamal ps -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }} 2>/dev/null; then
           current_containers=$(kamal ps -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }} 2>/dev/null | grep -v "CONTAINER" | head -1 | awk '{print $2}' || echo "none")
@@ -378,7 +378,7 @@ runs:
       run: |
         echo "🚧 Enabling maintenance mode..."
         export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
-        
+
         # Create a simple maintenance page if it doesn't exist
         if [[ ! -f "public/maintenance.html" ]]; then
           mkdir -p public
@@ -396,7 +396,7 @@ runs:
         </html>
         EOF
         fi
-        
+
         # Enable maintenance mode (this would depend on your specific setup)
         echo "✅ Maintenance mode enabled"
 
@@ -416,25 +416,25 @@ runs:
       run: |
         echo "🚀 Starting Kamal deployment to ${{ inputs.environment }}..."
         start_time=$(date +%s)
-        
+
         # Load secrets
         export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
-        
+
         # Set deployment flags based on strategy
         deploy_flags="--verbose -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }}"
-        
+
         if [[ "${{ inputs.skip-asset-precompilation }}" == "true" ]]; then
           deploy_flags="$deploy_flags --skip-push"
         fi
-        
+
         # Run deployment
         if kamal deploy $deploy_flags; then
           end_time=$(date +%s)
           duration=$((end_time - start_time))
-          
+
           # Get deployed version
           deployed_version=$(kamal ps -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }} 2>/dev/null | grep -v "CONTAINER" | head -1 | awk '{print $2}' || echo "unknown")
-          
+
           echo "deploy-duration=${duration}" >> $GITHUB_OUTPUT
           echo "deploy-status=success" >> $GITHUB_OUTPUT
           echo "deployed-version=${deployed_version}" >> $GITHUB_OUTPUT
@@ -465,7 +465,7 @@ runs:
       run: |
         echo "🏥 Running comprehensive health checks..."
         export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
-        
+
         # Check container status
         echo "📊 Checking container status..."
         if ! kamal ps -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }}; then
@@ -473,12 +473,12 @@ runs:
           echo "health-status=failed" >> $GITHUB_OUTPUT
           exit 1
         fi
-        
+
         # Check application health endpoint if provided
         if [[ -n "${{ inputs.health-check-url }}" ]]; then
           echo "🔍 Testing health check endpoint: ${{ inputs.health-check-url }}"
           timeout_seconds=${{ inputs.health-check-timeout }}
-          
+
           for i in $(seq 1 $((timeout_seconds / 10))); do
             if curl -f -s "${{ inputs.health-check-url }}" >/dev/null; then
               echo "✅ Health check endpoint is responding"
@@ -488,7 +488,7 @@ runs:
               echo "⏳ Health check attempt $i failed, retrying in 10 seconds..."
               sleep 10
             fi
-            
+
             if [[ $i -eq $((timeout_seconds / 10)) ]]; then
               echo "❌ Health check endpoint failed after ${timeout_seconds} seconds"
               echo "health-status=failed" >> $GITHUB_OUTPUT
@@ -499,7 +499,7 @@ runs:
           echo "ℹ️ No health check URL provided, skipping endpoint check"
           echo "health-status=skipped" >> $GITHUB_OUTPUT
         fi
-        
+
         echo "✅ All health checks passed"
 
     - name: Disable maintenance mode
@@ -528,12 +528,12 @@ runs:
       run: |
         echo "🔄 Performing automatic rollback..."
         export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
-        
+
         # Attempt rollback to previous version
         if kamal rollback -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }}; then
           echo "✅ Rollback completed successfully"
           echo "rollback-performed=true" >> $GITHUB_OUTPUT
-          
+
           # Verify rollback
           sleep 10
           kamal ps -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }}
@@ -551,7 +551,7 @@ runs:
         deploy_status="${{ steps.kamal-deploy.outputs.deploy-status }}"
         health_status="${{ steps.health-checks.outputs.health-status }}"
         rollback_status="${{ steps.rollback.outputs.rollback-performed }}"
-        
+
         if [[ "$deploy_status" == "success" && ("$health_status" == "passed" || "$health_status" == "skipped") ]]; then
           echo "status=success" >> $GITHUB_OUTPUT
         elif [[ "$rollback_status" == "true" ]]; then
@@ -559,12 +559,12 @@ runs:
         else
           echo "status=failed" >> $GITHUB_OUTPUT
         fi
-        
+
         # Set other outputs
         duration="${{ steps.kamal-deploy.outputs.deploy-duration }}"
         version="${{ steps.kamal-deploy.outputs.deployed-version }}"
         rollback="${{ steps.rollback.outputs.rollback-performed }}"
-        
+
         echo "duration=${duration:-unknown}" >> $GITHUB_OUTPUT
         echo "version=${version:-unknown}" >> $GITHUB_OUTPUT
         echo "rollback=${rollback:-false}" >> $GITHUB_OUTPUT
@@ -575,17 +575,17 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       run: |
         echo "🧹 Performing cleanup..."
-        
+
         # Remove secrets file
         rm -f .kamal/secrets.${{ inputs.environment }}
-        
+
         # Clean up Docker resources if deployment failed
         if [[ "${{ steps.deploy-result.outputs.status }}" != "success" ]]; then
           docker system prune -f 2>/dev/null || true
         fi
-        
+
         echo "✅ Cleanup completed"
 
 branding:
   icon: 'upload-cloud'
-  color: 'purple' 
+  color: 'purple'

@@ -110,19 +110,19 @@ runs:
       shell: bash
       run: |
         echo "🔍 Validating Nuxt setup inputs..."
-        
+
         # Validate environment
         if [[ ! "${{ inputs.environment }}" =~ ^(staging|production)$ ]]; then
           echo "❌ Error: environment must be either 'staging' or 'production'"
           exit 1
         fi
-        
+
         # Validate working directory
         if [[ ! -d "${{ inputs.working-directory }}" ]]; then
           echo "❌ Error: working-directory '${{ inputs.working-directory }}' does not exist"
           exit 1
         fi
-        
+
         echo "✅ Input validation completed for Nuxt setup"
 
     - name: Set setup times
@@ -145,7 +145,7 @@ runs:
           "${{ inputs.ssh-private-key }}"
           "${{ inputs.web-server-dns-name }}"
         )
-        
+
         var_names=(
           "GH_TOKEN"
           "KAMAL_REGISTRY_PASSWORD"
@@ -153,7 +153,7 @@ runs:
           "SSH_PRIVATE_KEY"
           "WEB_SERVER_DNS_NAME"
         )
-        
+
         for i in "${!required_vars[@]}"; do
           if [[ -z "${required_vars[$i]}" ]]; then
             echo "❌ Error: ${var_names[$i]} is not set or empty"
@@ -199,10 +199,10 @@ runs:
       run: |
         echo "🔐 Creating environment-specific .env file for Nuxt Frontend..."
         env_file=".env.${{ inputs.environment }}"
-        
+
         # Remove existing env file if it exists
         rm -f "$env_file"
-        
+
         # Core secrets for frontend setup
         cat <<EOF > "$env_file"
         RAILS_MASTER_KEY=${{ inputs.rails-master-key }}
@@ -221,20 +221,20 @@ runs:
         WEB_SERVER_DNS_NAME=${{ inputs.web-server-dns-name }}
         GH_TOKEN=${{ inputs.gh-token }}
         EOF
-        
+
         # Add additional environment variables if provided
         if [[ -n "${{ inputs.additional-env-vars }}" ]]; then
           echo "" >> "$env_file"
           echo "# Additional environment variables" >> "$env_file"
           echo "${{ inputs.additional-env-vars }}" >> "$env_file"
         fi
-        
+
         # Set proper permissions
         chmod 600 "$env_file"
-        
+
         echo "✅ Environment file created: $env_file"
         echo "📋 Environment file contains $(wc -l < "$env_file") lines"
-        
+
         # Display contents for verification (be careful with sensitive data)
         echo "🔍 Environment file verification:"
         echo "File exists: $(test -f "$env_file" && echo "Yes" || echo "No")"
@@ -257,18 +257,18 @@ runs:
       run: |
         echo "🚀 Starting Kamal v1 setup for ${{ inputs.environment }} frontend..."
         start_time=$(date +%s)
-        
+
         env_file=".env.${{ inputs.environment }}"
         export $(grep -v '^#' "$env_file" | xargs)
-        
+
         # Prepare setup command
         setup_cmd="kamal setup -d ${{ inputs.environment }}"
         if [[ "${{ inputs.setup-verbose }}" == "true" ]]; then
           setup_cmd="$setup_cmd --verbose"
         fi
-        
+
         echo "🔄 Running: $setup_cmd"
-        
+
         if eval "$setup_cmd"; then
           end_time=$(date +%s)
           duration=$((end_time - start_time))
@@ -314,7 +314,7 @@ runs:
         else
           echo "status=failed" >> $GITHUB_OUTPUT
         fi
-        
+
         # Get duration from setup step
         duration="${{ steps.kamal-setup.outputs.setup-duration }}"
         echo "duration=${duration:-unknown}" >> $GITHUB_OUTPUT
@@ -333,4 +333,4 @@ runs:
 
 branding:
   icon: 'server'
-  color: 'blue' 
+  color: 'blue'

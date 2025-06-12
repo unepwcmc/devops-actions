@@ -93,12 +93,12 @@ runs:
           echo "Error: notification-type must be one of: started, success, failure, custom"
           exit 1
         fi
-        
+
         if [[ ! "${{ inputs.action-type }}" =~ ^(deploy|setup|provision|test)$ ]]; then
           echo "Error: action-type must be one of: deploy, setup, provision, test"
           exit 1
         fi
-        
+
         if [[ ! "${{ inputs.environment }}" =~ ^(staging|production)$ ]]; then
           echo "Error: environment must be either staging or production"
           exit 1
@@ -154,4 +154,4 @@ runs:
 
 branding:
   icon: 'message-circle'
-  color: 'blue' 
+  color: 'blue'
