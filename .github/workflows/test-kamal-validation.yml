@@ -32,58 +32,55 @@ jobs:
         run: |
           echo "📦 Installing required dependencies..."
           
-          # Install PyYAML for Python YAML validation
-          echo "🐍 Installing PyYAML..."
-          if command -v pip3 &> /dev/null; then
-            pip3 install PyYAML
-          elif command -v pip &> /dev/null; then
-            pip install PyYAML
-          elif command -v python3 -m pip &> /dev/null; then
-            python3 -m pip install PyYAML
-          elif command -v python -m pip &> /dev/null; then
-            python -m pip install PyYAML
-          elif command -v apt-get &> /dev/null; then
-            echo "📦 Installing via apt-get..."
-            sudo apt-get update && sudo apt-get install -y python3-yaml
+          # Install PyYAML using system package manager (most reliable for runners)
+          echo "🐍 Installing PyYAML via system package manager..."
+          if command -v apt-get &> /dev/null; then
+            echo "📦 Using apt-get (Ubuntu/Debian)..."
+            sudo apt-get update
+            sudo apt-get install -y python3-yaml file
+            echo "✅ Installed python3-yaml and file via apt-get"
           elif command -v yum &> /dev/null; then
-            echo "📦 Installing via yum..."
-            sudo yum install -y python3-PyYAML
+            echo "📦 Using yum (RHEL/CentOS)..."
+            sudo yum install -y python3-PyYAML file
+            echo "✅ Installed python3-PyYAML and file via yum"
+          elif command -v dnf &> /dev/null; then
+            echo "📦 Using dnf (Fedora)..."
+            sudo dnf install -y python3-PyYAML file
+            echo "✅ Installed python3-PyYAML and file via dnf"
+          elif command -v brew &> /dev/null; then
+            echo "📦 Using brew (macOS)..."
+            brew install libyaml
+            echo "✅ Installed libyaml via brew"
           else
-            echo "❌ Could not find a way to install PyYAML"
-            echo "🔍 Available Python commands:"
-            which python python3 pip pip3 2>/dev/null || echo "None found"
-            echo "🔍 Trying alternative installation..."
-            # Try downloading and installing manually as last resort
-            curl -O https://files.pythonhosted.org/packages/source/P/PyYAML/PyYAML-6.0.tar.gz || echo "Could not download PyYAML"
-          fi
-          
-          # Verify PyYAML installation
-          if python3 -c "import yaml; print('✅ PyYAML successfully imported')" 2>/dev/null; then
-            echo "✅ PyYAML installation verified"
-          else
-            echo "❌ PyYAML installation failed"
-            echo "🔍 Python module search paths:"
-            python3 -c "import sys; print('\\n'.join(sys.path))"
+            echo "❌ No supported package manager found"
+            echo "🔍 Available commands:"
+            which apt-get yum dnf brew 2>/dev/null || echo "None found"
             exit 1
           fi
           
-          # Install file command if not available (for debugging)
-          echo "🔧 Installing file command..."
-          if ! command -v file &> /dev/null; then
-            if command -v apt-get &> /dev/null; then
-              sudo apt-get install -y file
-            elif command -v yum &> /dev/null; then
-              sudo yum install -y file
-            elif command -v brew &> /dev/null; then
-              brew install file
-            else
-              echo "⚠️ Could not install file command, will skip file type detection"
-            fi
+          # Verify PyYAML installation
+          echo "🔍 Verifying PyYAML installation..."
+          if python3 -c "import yaml; print('✅ PyYAML successfully imported'); print(f'PyYAML version: {yaml.__version__}')" 2>/dev/null; then
+            echo "✅ PyYAML installation verified and working"
           else
-            echo "✅ file command already available"
+            echo "❌ PyYAML installation failed or not working"
+            echo "🔍 Python version: $(python3 --version)"
+            echo "🔍 Python executable: $(which python3)"
+            echo "🔍 Python module search paths:"
+            python3 -c "import sys; print('\\n'.join(sys.path))" 2>/dev/null || echo "Could not get sys.path"
+            echo "🔍 Available Python modules:"
+            python3 -c "help('modules')" 2>/dev/null | head -20 || echo "Could not list modules"
+            exit 1
           fi
           
-          echo "🎉 Dependencies installation completed"
+          # Verify file command
+          if command -v file &> /dev/null; then
+            echo "✅ file command available: $(file --version | head -1)"
+          else
+            echo "⚠️ file command not available (will skip file type detection)"
+          fi
+          
+          echo "🎉 All dependencies ready!"
 
       - name: Validate Action Files
         shell: bash
