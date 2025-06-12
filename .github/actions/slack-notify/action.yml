@@ -14,7 +14,7 @@ inputs:
     required: true
     default: 'started'
   action-type:
-    description: 'Type of action: deploy, setup, provision'
+    description: 'Type of action: deploy, setup, provision, test'
     required: true
     default: 'deploy'
   environment:
@@ -62,8 +62,17 @@ inputs:
   update-ts:
     description: 'Timestamp to update an existing message'
     required: false
+  update-message-ts:
+    description: 'Alias for update-ts - timestamp to update an existing message'
+    required: false
   custom-message:
     description: 'Custom message for custom notification type'
+    required: false
+  error-message:
+    description: 'Error message for failure notifications'
+    required: false
+  deployment-duration:
+    description: 'Duration of the deployment in seconds'
     required: false
   kamal-version:
     description: 'Kamal version being used'
@@ -85,8 +94,8 @@ runs:
           exit 1
         fi
         
-        if [[ ! "${{ inputs.action-type }}" =~ ^(deploy|setup|provision)$ ]]; then
-          echo "Error: action-type must be one of: deploy, setup, provision"
+        if [[ ! "${{ inputs.action-type }}" =~ ^(deploy|setup|provision|test)$ ]]; then
+          echo "Error: action-type must be one of: deploy, setup, provision, test"
           exit 1
         fi
         
@@ -121,7 +130,7 @@ runs:
         channel-id: ${{ inputs.slack-channel-id }}
         payload-file-path: .github/notifications/slack/${{ steps.template.outputs.template }}
         payload-file-path-parsed: true
-        update-ts: ${{ inputs.update-ts }}
+        update-ts: ${{ inputs.update-ts || inputs.update-message-ts }}
       env:
         SLACK_BOT_TOKEN: ${{ inputs.slack-bot-token }}
         REPOSITORY: ${{ inputs.repository }}
@@ -137,6 +146,8 @@ runs:
         WORKFLOW_NAME: ${{ inputs.workflow-name }}
         RUN_ID: ${{ inputs.run-id }}
         FAILURE_REASON: ${{ inputs.failure-reason }}
+        ERROR_MESSAGE: ${{ inputs.error-message }}
+        DEPLOYMENT_DURATION: ${{ inputs.deployment-duration }}
         ACTION_TYPE: ${{ inputs.action-type }}
         KAMAL_VERSION: ${{ inputs.kamal-version }}
         CUSTOM_MESSAGE: ${{ inputs.custom-message }}
