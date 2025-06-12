@@ -33,12 +33,45 @@ jobs:
           echo "📦 Installing required dependencies..."
           
           # Install PyYAML for Python YAML validation
-          pip3 install PyYAML
+          echo "🐍 Installing PyYAML..."
+          if command -v pip3 &> /dev/null; then
+            pip3 install PyYAML
+          elif command -v pip &> /dev/null; then
+            pip install PyYAML
+          elif command -v python3 -m pip &> /dev/null; then
+            python3 -m pip install PyYAML
+          elif command -v python -m pip &> /dev/null; then
+            python -m pip install PyYAML
+          elif command -v apt-get &> /dev/null; then
+            echo "📦 Installing via apt-get..."
+            sudo apt-get update && sudo apt-get install -y python3-yaml
+          elif command -v yum &> /dev/null; then
+            echo "📦 Installing via yum..."
+            sudo yum install -y python3-PyYAML
+          else
+            echo "❌ Could not find a way to install PyYAML"
+            echo "🔍 Available Python commands:"
+            which python python3 pip pip3 2>/dev/null || echo "None found"
+            echo "🔍 Trying alternative installation..."
+            # Try downloading and installing manually as last resort
+            curl -O https://files.pythonhosted.org/packages/source/P/PyYAML/PyYAML-6.0.tar.gz || echo "Could not download PyYAML"
+          fi
+          
+          # Verify PyYAML installation
+          if python3 -c "import yaml; print('✅ PyYAML successfully imported')" 2>/dev/null; then
+            echo "✅ PyYAML installation verified"
+          else
+            echo "❌ PyYAML installation failed"
+            echo "🔍 Python module search paths:"
+            python3 -c "import sys; print('\\n'.join(sys.path))"
+            exit 1
+          fi
           
           # Install file command if not available (for debugging)
+          echo "🔧 Installing file command..."
           if ! command -v file &> /dev/null; then
             if command -v apt-get &> /dev/null; then
-              sudo apt-get update && sudo apt-get install -y file
+              sudo apt-get install -y file
             elif command -v yum &> /dev/null; then
               sudo yum install -y file
             elif command -v brew &> /dev/null; then
@@ -46,9 +79,11 @@ jobs:
             else
               echo "⚠️ Could not install file command, will skip file type detection"
             fi
+          else
+            echo "✅ file command already available"
           fi
           
-          echo "✅ Dependencies installed successfully"
+          echo "🎉 Dependencies installation completed"
 
       - name: Validate Action Files
         shell: bash
