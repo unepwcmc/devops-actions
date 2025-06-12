@@ -20,12 +20,23 @@ on:
 
 jobs:
   validate-action-structure:
-    name: Validate Kamal ${{ inputs.kamal_version }} ${{ inputs.app_type }} Actions (Structure & YAML Only)
+    name: Validate Kamal ${{ inputs.kamal_version }} ${{ inputs.app_type }} Actions (Full Test)
     runs-on: self-hosted
     
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 3.1.2
+          bundler-cache: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.12.0"
 
       - name: Install Dependencies
         shell: bash
@@ -204,30 +215,19 @@ jobs:
       - name: Test Kamal Installation
         shell: bash
         run: |
-          echo "💎 Testing Kamal installation availability..."
+          echo "💎 Installing and testing Kamal..."
           
-          # Check if Ruby and gem are available
-          if command -v ruby &> /dev/null; then
-            echo "✅ Ruby available: $(ruby --version)"
-          else
-            echo "⚠️ Ruby not available - skipping Kamal installation test"
-            echo "ℹ️ This is OK for validation-only testing"
-            exit 0
-          fi
-          
-          if command -v gem &> /dev/null; then
-            echo "✅ Gem command available: $(gem --version)"
-          else
-            echo "⚠️ Gem command not available - skipping Kamal installation test"
-            echo "ℹ️ This is OK for validation-only testing"
-            exit 0
-          fi
+          # Verify Ruby and gem are available (should be from setup step)
+          echo "🔍 Verifying Ruby environment:"
+          echo "  Ruby version: $(ruby --version)"
+          echo "  Gem version: $(gem --version)"
+          echo "  Gem environment: $(gem env | grep 'RUBY EXECUTABLE' | head -1)"
           
           # Try to install kamal (or check if already installed)
           if command -v kamal &> /dev/null; then
             echo "✅ Kamal already installed: $(kamal version)"
           else
-            echo "📦 Attempting to install Kamal ${{ inputs.kamal_version == 'v1' && '1.8.2' || '2.5.3' }}..."
+            echo "📦 Installing Kamal ${{ inputs.kamal_version == 'v1' && '1.8.2' || '2.5.3' }}..."
             
             # Install the specific version
             if [[ "${{ inputs.kamal_version }}" == "v1" ]]; then
@@ -236,21 +236,32 @@ jobs:
               kamal_version="2.5.3"
             fi
             
-            # Test installation (non-blocking for validation)
+            # Install Kamal
+            echo "🔄 Running: gem install kamal --version $kamal_version --no-document"
             if gem install kamal --version "$kamal_version" --no-document; then
               echo "✅ Kamal $kamal_version installed successfully"
-              echo "📋 Kamal version: $(kamal version)"
-              echo "📚 Kamal help:"
-              kamal help | head -5
+              
+              # Verify installation
+              if command -v kamal &> /dev/null; then
+                echo "📋 Kamal version: $(kamal version)"
+                echo "📚 Kamal help (first 5 lines):"
+                kamal help | head -5
+                echo "✅ Kamal is fully functional"
+              else
+                echo "❌ Kamal installed but not available in PATH"
+                exit 1
+              fi
             else
-              echo "⚠️ Could not install Kamal $kamal_version"
-              echo "ℹ️ This is OK for validation-only testing - continuing without Kamal"
-              echo "🔍 Gem environment:"
-              gem env | head -10 || echo "Could not get gem environment"
+              echo "❌ Failed to install Kamal $kamal_version"
+              echo "🔍 Gem installation details:"
+              gem list | grep kamal || echo "No kamal gems found"
+              echo "🔍 Gem paths:"
+              gem env | grep -E "(GEM PATHS|EXECUTABLE DIRECTORY)"
+              exit 1
             fi
           fi
           
-          echo "✅ Kamal installation test completed (validation mode)"
+          echo "🎉 Kamal installation and verification completed successfully"
 
       - name: Create Test Configuration
         shell: bash
