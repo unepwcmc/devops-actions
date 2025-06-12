@@ -268,9 +268,13 @@ jobs:
         run: |
           echo "📝 Creating test configuration files..."
           
-          # Create test directories
-          mkdir -p config test-project
+          # Create test project directory structure
+          mkdir -p test-project/config
           cd test-project
+          
+          echo "🔍 Working in directory: $(pwd)"
+          echo "📁 Created directory structure:"
+          ls -la
           
           # Create a basic deploy.yml for testing
           if [[ "${{ inputs.app_type }}" == "backend" ]]; then
@@ -327,7 +331,13 @@ jobs:
           CMD ["npm", "start"]
           EOF
           
-          echo "✅ Test configuration files created"
+          echo "✅ Test configuration files created:"
+          echo "📋 Files in test-project:"
+          ls -la
+          echo "📋 Files in test-project/config:"
+          ls -la config/
+          echo "📄 Deploy config preview:"
+          head -10 config/deploy.yml
 
       - name: Test Kamal Configuration Validation
         shell: bash
