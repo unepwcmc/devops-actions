@@ -27,6 +27,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install Dependencies
+        shell: bash
+        run: |
+          echo "📦 Installing required dependencies..."
+          
+          # Install PyYAML for Python YAML validation
+          pip3 install PyYAML
+          
+          # Install file command if not available (for debugging)
+          if ! command -v file &> /dev/null; then
+            if command -v apt-get &> /dev/null; then
+              sudo apt-get update && sudo apt-get install -y file
+            elif command -v yum &> /dev/null; then
+              sudo yum install -y file
+            elif command -v brew &> /dev/null; then
+              brew install file
+            else
+              echo "⚠️ Could not install file command, will skip file type detection"
+            fi
+          fi
+          
+          echo "✅ Dependencies installed successfully"
+
       - name: Validate Action Files
         shell: bash
         run: |
@@ -48,7 +71,11 @@ jobs:
             echo "🔍 Environment info:"
             echo "  Python version: $(python3 --version)"
             echo "  Locale: ${LANG:-none} ${LC_ALL:-none}"
-            echo "  File encoding: $(file "$setup_action")"
+            if command -v file &> /dev/null; then
+              echo "  File encoding: $(file "$setup_action")"
+            else
+              echo "  File encoding: file command not available"
+            fi
             
             # Validate YAML syntax with detailed error reporting
             echo "🔍 Validating YAML syntax..."
