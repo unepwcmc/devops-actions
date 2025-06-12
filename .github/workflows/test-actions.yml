@@ -97,6 +97,50 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install Dependencies
+        shell: bash
+        run: |
+          echo "📦 Installing required dependencies..."
+          
+          # Install PyYAML using system package manager (most reliable for runners)
+          echo "🐍 Installing PyYAML via system package manager..."
+          if command -v apt-get &> /dev/null; then
+            echo "📦 Using apt-get (Ubuntu/Debian)..."
+            sudo apt-get update
+            sudo apt-get install -y python3-yaml file
+            echo "✅ Installed python3-yaml and file via apt-get"
+          elif command -v yum &> /dev/null; then
+            echo "📦 Using yum (RHEL/CentOS)..."
+            sudo yum install -y python3-PyYAML file
+            echo "✅ Installed python3-PyYAML and file via yum"
+          elif command -v dnf &> /dev/null; then
+            echo "📦 Using dnf (Fedora)..."
+            sudo dnf install -y python3-PyYAML file
+            echo "✅ Installed python3-PyYAML and file via dnf"
+          elif command -v brew &> /dev/null; then
+            echo "📦 Using brew (macOS)..."
+            brew install libyaml
+            echo "✅ Installed libyaml via brew"
+          else
+            echo "❌ No supported package manager found"
+            echo "🔍 Available commands:"
+            which apt-get yum dnf brew 2>/dev/null || echo "None found"
+            exit 1
+          fi
+          
+          # Verify PyYAML installation
+          echo "🔍 Verifying PyYAML installation..."
+          if python3 -c "import yaml; print('✅ PyYAML successfully imported'); print(f'PyYAML version: {yaml.__version__}')" 2>/dev/null; then
+            echo "✅ PyYAML installation verified and working"
+          else
+            echo "❌ PyYAML installation failed or not working"
+            echo "🔍 Python version: $(python3 --version)"
+            echo "🔍 Python executable: $(which python3)"
+            exit 1
+          fi
+          
+          echo "🎉 All dependencies ready!"
+
       - name: Validate Action Files Exist
         run: |
           echo "🔍 Validating action structure..."
@@ -132,16 +176,34 @@ jobs:
           echo "🎉 All workflow examples found!"
 
       - name: Check YAML Syntax
+        shell: bash
         run: |
           echo "🔍 Checking YAML syntax for actions..."
           
+          # Check environment info for debugging
+          echo "🔍 Environment info:"
+          echo "  Python version: $(python3 --version)"
+          echo "  Locale: ${LANG:-none} ${LC_ALL:-none}"
+          
+          # Validate each action file with detailed error reporting
           for action_file in .github/actions/*/action.yml; do
-            if python3 -c "import yaml; yaml.safe_load(open('$action_file'))" 2>/dev/null; then
-              echo "✅ $action_file - Valid YAML"
+            echo "📋 Validating: $action_file"
+            
+            # Check file encoding if file command is available
+            if command -v file &> /dev/null; then
+              echo "  File info: $(file "$action_file")"
+            fi
+            
+            # Validate YAML syntax with detailed error reporting
+            if python3 -c "import yaml; import sys; f=open('$action_file','r',encoding='utf-8'); data=yaml.safe_load(f.read()); f.close(); print('✅ $action_file - Valid YAML'); sys.exit(0 if all(k in data for k in ['name','description','runs']) else 1)" 2>&1; then
+              echo "  ✅ YAML validation and required fields check passed"
             else
-              echo "❌ $action_file - Invalid YAML"
+              echo "  ❌ YAML validation failed"
+              # Try to get more specific error info
+              python3 -c "import yaml; yaml.safe_load(open('$action_file','r',encoding='utf-8'))" 2>&1 || echo "  Detailed YAML error shown above"
               exit 1
             fi
+            echo ""
           done
           
           echo "🎉 All action YAML files are valid!"
