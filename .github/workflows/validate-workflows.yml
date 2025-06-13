@@ -1,0 +1,72 @@
+name: Validate Workflows
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/**'
+      - '.github/actions/**'
+
+jobs:
+  validate:
+    name: Validate Workflows
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Find workflow files
+        id: find-workflows
+        shell: bash
+        run: |
+          echo "workflow_files<<EOF" >> $GITHUB_OUTPUT
+          find .github/workflows -name "*.yml" -o -name "*.yaml" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Validate workflows
+        shell: bash
+        run: |
+          # Read workflow files
+          while IFS= read -r workflow_file; do
+            if [ -z "$workflow_file" ]; then
+              continue
+            fi
+            echo "Validating $workflow_file..."
+            
+            # Check if file exists
+            if [ ! -f "$workflow_file" ]; then
+              echo "::error::Workflow file not found at $workflow_file"
+              exit 1
+            fi
+            
+            # Check for required actions
+            if ! grep -q "uses:.*validate-secrets" "$workflow_file"; then
+              echo "::error::Required action 'validate-secrets' not found in $workflow_file"
+              echo "Please add the validate-secrets action to your workflow"
+              exit 1
+            fi
+            
+            # Check environment configuration
+            if ! grep -q "environment:" "$workflow_file"; then
+              echo "::error::Workflow $workflow_file is missing environment configuration"
+              echo "Please add environment configuration to your workflow"
+              exit 1
+            fi
+            
+            # Check for direct secrets usage
+            if grep -q "secrets\." "$workflow_file"; then
+              echo "::warning::Workflow $workflow_file is using secrets directly"
+              echo "Consider using the validate-secrets action instead"
+            fi
+          done <<< "${{ steps.find-workflows.outputs.workflow_files }}"
+
+      - name: Run validate-secrets tests
+        uses: ./.github/workflows/test-validate-secrets.yml
+        with:
+          test-case: 'all' 

@@ -1,0 +1,126 @@
+name: Nuxt Frontend Deployment (Kamal v2)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - staging
+        - production
+
+jobs:
+  deploy:
+    name: Deploy Nuxt Frontend (Kamal v2)
+    runs-on: self-hosted
+    environment: ${{ inputs.environment || 'staging' }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Validate and populate secrets
+      - name: Validate and Populate Secrets
+        uses: unepwcmc/devops-actions/.github/actions/validate-secrets@v1
+        with:
+          secrets-file: '.kamal/secrets-common'
+          environment: ${{ inputs.environment || 'staging' }}
+
+      # Notification: Start
+      - name: Notify Deployment Start
+        id: notify-start
+        uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'started'
+          action-type: 'deploy'
+          environment: ${{ inputs.environment || 'staging' }}
+          repository: ${{ github.repository }}
+          repository-url: ${{ github.server_url }}/${{ github.repository }}
+          action-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          actor: ${{ github.actor }}
+          actor-url: https://github.com/${{ github.actor }}
+          workflow-name: ${{ github.workflow }}
+          run-id: ${{ github.run_id }}
+          commit-message: ${{ github.event.head_commit.message }}
+
+      # Main Deployment with Kamal v2
+      - name: Deploy Nuxt Frontend
+        id: deploy
+        uses: unepwcmc/devops-actions/.github/actions/nuxt-kamal-v2-deploy@v1
+        with:
+          environment: ${{ inputs.environment || 'staging' }}
+          ssh-private-key: ${{ env.SSH_PRIVATE_KEY }}
+          kamal-registry-username: ${{ env.KAMAL_REGISTRY_USERNAME }}
+          kamal-registry-password: ${{ env.KAMAL_REGISTRY_PASSWORD }}
+          gh-token: ${{ env.GH_TOKEN }}
+          web-server-dns-name: ${{ env.WEB_SERVER_DNS_NAME }}
+          
+          # Rails API Integration
+          rails-master-key: ${{ env.RAILS_MASTER_KEY }}
+          rails-default-public-app-host: ${{ env.RAILS_DEFAULT_PUBLIC_APP_HOST }}
+          rails-default-public-app-host-protocol: ${{ env.RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL }}
+          
+          # Frontend Configuration
+          frontend-app-name: ${{ env.FRONTEND_APP_NAME }}
+          auth-origin: ${{ env.AUTH_ORIGIN }}
+          nuxt-public-rails-api-server: ${{ env.NUXT_PUBLIC_RAILS_API_SERVER }}
+          
+          # Azure AD & WCMC User Management
+          azure-ad-client-id: ${{ env.NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID }}
+          azure-ad-client-secret: ${{ env.NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_SECRET }}
+          azure-ad-tenant-id: ${{ env.NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_TENANT_ID }}
+          wcmc-user-management-secret: ${{ env.NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET }}
+          wcmc-user-management-rails-api-server: ${{ env.NUXT_PUBLIC_WCMC_MODULES_WCMC_USER_MANAGEMENT_RAILS_API_SERVER }}
+          
+          # Kamal v2 specific options
+          deployment-strategy: 'rolling'
+          health-check-enabled: true
+          health-check-timeout: 300
+          rollback-on-failure: true
+
+      # Notification: Success
+      - name: Notify Deployment Success
+        if: success()
+        uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'success'
+          action-type: 'deploy'
+          environment: ${{ inputs.environment || 'staging' }}
+          update-message-ts: ${{ steps.notify-start.outputs.message-ts }}
+          repository: ${{ github.repository }}
+          repository-url: ${{ github.server_url }}/${{ github.repository }}
+          action-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          actor: ${{ github.actor }}
+          actor-url: https://github.com/${{ github.actor }}
+          workflow-name: ${{ github.workflow }}
+          run-id: ${{ github.run_id }}
+          commit-message: ${{ github.event.head_commit.message }}
+          deployment-duration: ${{ steps.deploy.outputs.deployment-duration }}
+
+      # Notification: Failure
+      - name: Notify Deployment Failure
+        if: failure()
+        uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'failure'
+          action-type: 'deploy'
+          environment: ${{ inputs.environment || 'staging' }}
+          update-message-ts: ${{ steps.notify-start.outputs.message-ts }}
+          repository: ${{ github.repository }}
+          repository-url: ${{ github.server_url }}/${{ github.repository }}
+          action-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          actor: ${{ github.actor }}
+          actor-url: https://github.com/${{ github.actor }}
+          workflow-name: ${{ github.workflow }}
+          run-id: ${{ github.run_id }}
+          commit-message: ${{ github.event.head_commit.message }}
+          error-message: 'Nuxt frontend deployment (Kamal v2) failed - check logs for details' 

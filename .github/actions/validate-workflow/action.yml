@@ -1,0 +1,56 @@
+name: 'Validate Workflow Configuration'
+description: 'Validates workflow configuration and ensures proper setup'
+
+inputs:
+  workflow-file:
+    description: 'Path to the workflow file to validate'
+    required: true
+  required-actions:
+    description: 'Comma-separated list of required actions'
+    required: true
+    default: 'validate-secrets'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Check workflow file exists
+      shell: bash
+      run: |
+        if [ ! -f "${{ inputs.workflow-file }}" ]; then
+          echo "::error::Workflow file not found at ${{ inputs.workflow-file }}"
+          exit 1
+        fi
+
+    - name: Validate required actions
+      shell: bash
+      run: |
+        # Convert comma-separated list to array
+        IFS=',' read -ra REQUIRED_ACTIONS <<< "${{ inputs.required-actions }}"
+        
+        # Check each required action
+        for action in "${REQUIRED_ACTIONS[@]}"; do
+          if ! grep -q "uses:.*$action" "${{ inputs.workflow-file }}"; then
+            echo "::error::Required action '$action' not found in workflow"
+            echo "Please add the $action action to your workflow"
+            exit 1
+          fi
+        done
+
+    - name: Validate environment configuration
+      shell: bash
+      run: |
+        # Check if environment is properly configured
+        if ! grep -q "environment:" "${{ inputs.workflow-file }}"; then
+          echo "::error::Workflow is missing environment configuration"
+          echo "Please add environment configuration to your workflow"
+          exit 1
+        fi
+
+    - name: Validate secrets usage
+      shell: bash
+      run: |
+        # Check if secrets are being used directly instead of through validate-secrets
+        if grep -q "\${{ secrets\." "${{ inputs.workflow-file }}"; then
+          echo "::warning::Workflow is using secrets directly"
+          echo "Consider using the validate-secrets action instead"
+        fi 
