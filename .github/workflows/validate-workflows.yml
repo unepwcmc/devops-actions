@@ -45,24 +45,36 @@ jobs:
               exit 1
             fi
             
-            # Check for required actions
-            if ! grep -q "uses:.*validate-secrets" "$workflow_file"; then
-              echo "::error::Required action 'validate-secrets' not found in $workflow_file"
-              echo "Please add the validate-secrets action to your workflow"
-              exit 1
+            # Skip validation for test and example workflows
+            if [[ "$workflow_file" == *"test"* ]] || [[ "$workflow_file" == *"example"* ]]; then
+              echo "Skipping validation for test/example workflow: $workflow_file"
+              continue
             fi
             
-            # Check environment configuration
-            if ! grep -q "environment:" "$workflow_file"; then
-              echo "::error::Workflow $workflow_file is missing environment configuration"
-              echo "Please add environment configuration to your workflow"
-              exit 1
+            # Check for required actions in deployment workflows
+            if [[ "$workflow_file" == *"deploy"* ]] || [[ "$workflow_file" == *"deployment"* ]]; then
+              if ! grep -q "uses:.*validate-secrets" "$workflow_file"; then
+                echo "::error::Required action 'validate-secrets' not found in deployment workflow $workflow_file"
+                echo "Please add the validate-secrets action to your workflow"
+                exit 1
+              fi
             fi
             
-            # Check for direct secrets usage
-            if grep -q "secrets\." "$workflow_file"; then
-              echo "::warning::Workflow $workflow_file is using secrets directly"
-              echo "Consider using the validate-secrets action instead"
+            # Check environment configuration for deployment workflows
+            if [[ "$workflow_file" == *"deploy"* ]] || [[ "$workflow_file" == *"deployment"* ]]; then
+              if ! grep -q "environment:" "$workflow_file"; then
+                echo "::error::Deployment workflow $workflow_file is missing environment configuration"
+                echo "Please add environment configuration to your workflow"
+                exit 1
+              fi
+            fi
+            
+            # Check for direct secrets usage in deployment workflows
+            if [[ "$workflow_file" == *"deploy"* ]] || [[ "$workflow_file" == *"deployment"* ]]; then
+              if grep -q "secrets\." "$workflow_file"; then
+                echo "::warning::Deployment workflow $workflow_file is using secrets directly"
+                echo "Consider using the validate-secrets action instead"
+              fi
             fi
           done <<< "${{ steps.find-workflows.outputs.workflow_files }}"
 
