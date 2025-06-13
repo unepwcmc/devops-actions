@@ -34,8 +34,8 @@ jobs:
         id: notify-start
         uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
         with:
-          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
-          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          slack-bot-token: ${{ env.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ env.SLACK_CHANNEL_ID }}
           notification-type: 'started'
           action-type: 'deploy'
           environment: ${{ inputs.environment || 'staging' }}
@@ -88,8 +88,8 @@ jobs:
         if: success()
         uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
         with:
-          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
-          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          slack-bot-token: ${{ env.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ env.SLACK_CHANNEL_ID }}
           notification-type: 'success'
           action-type: 'deploy'
           environment: ${{ inputs.environment || 'staging' }}
@@ -109,8 +109,8 @@ jobs:
         if: failure()
         uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
         with:
-          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
-          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          slack-bot-token: ${{ env.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ env.SLACK_CHANNEL_ID }}
           notification-type: 'failure'
           action-type: 'deploy'
           environment: ${{ inputs.environment || 'staging' }}

@@ -28,17 +28,23 @@ jobs:
       - name: Install Kamal
         run: gem install kamal -v ${{ env.KAMAL_VERSION }}
 
+      - name: Validate and Populate Secrets
+        uses: unepwcmc/devops-actions/.github/actions/validate-secrets@v1
+        with:
+          secrets-file: '.kamal/secrets-common'
+          environment: 'production'
+
       - name: Deploy with Kamal
         run: kamal deploy
         env:
-          KAMAL_REGISTRY_USERNAME: ${{ secrets.KAMAL_REGISTRY_USERNAME }}
-          KAMAL_REGISTRY_PASSWORD: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
-          RAILS_MASTER_KEY: ${{ secrets.RAILS_MASTER_KEY }}
-          DATABASE_HOSTNAME: ${{ secrets.DATABASE_HOSTNAME }}
-          DATABASE_NAME: ${{ secrets.DATABASE_NAME }}
-          DATABASE_USERNAME: ${{ secrets.DATABASE_USERNAME }}
-          DATABASE_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
-          DATABASE_PORT: ${{ secrets.DATABASE_PORT }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_REGION: ${{ secrets.AWS_REGION }} 
+          KAMAL_REGISTRY_USERNAME: ${{ env.KAMAL_REGISTRY_USERNAME }}
+          KAMAL_REGISTRY_PASSWORD: ${{ env.KAMAL_REGISTRY_PASSWORD }}
+          RAILS_MASTER_KEY: ${{ env.RAILS_MASTER_KEY }}
+          DATABASE_HOSTNAME: ${{ env.DATABASE_HOSTNAME }}
+          DATABASE_NAME: ${{ env.DATABASE_NAME }}
+          DATABASE_USERNAME: ${{ env.DATABASE_USERNAME }}
+          DATABASE_PASSWORD: ${{ env.DATABASE_PASSWORD }}
+          DATABASE_PORT: ${{ env.DATABASE_PORT }}
+          AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ env.AWS_REGION }} 
