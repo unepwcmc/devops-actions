@@ -53,6 +53,8 @@ This repository enables multiple projects to reference standardized deployment a
 
 ## 🛠 Quick Start
 
+> **💡 Start Simple**: You only need 3 secrets to get started: `KAMAL_REGISTRY_USERNAME`, `KAMAL_REGISTRY_PASSWORD`, and `SSH_PRIVATE_KEY` (plus `RAILS_MASTER_KEY` for Rails apps).
+
 ### 1. Copy Example Workflows
 
 Choose the appropriate workflow from our examples:
@@ -67,60 +69,77 @@ Choose the appropriate workflow from our examples:
 ### 2. Configure Secrets
 
 #### Create Secrets File
-First, copy the secrets template:
+Choose the appropriate template for your needs:
+
+**For basic Rails deployment:**
+```bash
+cp .kamal/secrets-common.minimal.template .kamal/secrets-common
+```
+
+**For full-featured Rails deployment:**
 ```bash
 cp .kamal/secrets-common.template .kamal/secrets-common
 ```
 
+**For Nuxt frontend deployment:**
+```bash
+cp .kamal/secrets-common.nuxt.template .kamal/secrets-common
+```
+
 #### Add Secrets to GitHub Environment
-Add these secrets to your repository's environment (staging/production):
+Add secrets to your repository's environment (staging/production) based on your needs:
 
-#### Core Deployment Secrets
+#### ✅ **Required for Any Deployment**
 ```
-SSH_PRIVATE_KEY
-KAMAL_REGISTRY_USERNAME
-KAMAL_REGISTRY_PASSWORD
-RAILS_MASTER_KEY
-RAILS_DEFAULT_PUBLIC_APP_HOST
-RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL
-DATABASE_HOST
-DATABASE_NAME
-DATABASE_USERNAME
-DATABASE_PASSWORD
-DATABASE_PORT
+KAMAL_REGISTRY_USERNAME     # Docker registry username  
+KAMAL_REGISTRY_PASSWORD     # Docker registry password
+SSH_PRIVATE_KEY            # SSH key for server access (in action inputs, not template)
 ```
 
-#### Slack Notification Secrets
+#### 🔧 **Required for Rails Backend**
 ```
-SLACK_BOT_TOKEN
-SLACK_CHANNEL_ID
+RAILS_MASTER_KEY           # Rails master key
 ```
 
-> **Note**: With the new `validate-secrets` action, these secrets are automatically populated as environment variables, so workflows use `${{ env.SLACK_BOT_TOKEN }}` instead of `${{ secrets.SLACK_BOT_TOKEN }}`.
-
-#### Optional Enhancement Secrets
+#### 💾 **Required if Using Database**
 ```
-# Redis/Sidekiq
-REDIS_USERNAME
-REDIS_PASSWORD
+DATABASE_HOSTNAME          # Database host
+DATABASE_NAME              # Database name  
+DATABASE_USERNAME          # Database username
+DATABASE_PASSWORD          # Database password
+DATABASE_PORT              # Database port (usually 5432)
+```
 
-# Mail Server
-MAIL_USERNAME
-MAIL_PASSWORD
+#### 📢 **Optional: Slack Notifications**
+```
+SLACK_BOT_TOKEN            # Slack bot token
+SLACK_CHANNEL_ID           # Slack channel ID
+```
 
-# AWS S3
-AWS_S3_ACCESS_KEY_ID
-AWS_S3_SECRET_ACCESS_KEY
-AWS_S3_REGION
-AWS_S3_NAME
+#### 🎨 **Optional: Frontend/Nuxt Applications**
+```
+FRONTEND_APP_NAME                    # Your app name
+AUTH_ORIGIN                          # Auth origin URL
+NUXT_PUBLIC_RAILS_API_SERVER         # Rails API URL
+RAILS_DEFAULT_PUBLIC_APP_HOST        # Rails host
+RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL # Usually https
+```
 
-# Frontend Integration
-FRONTEND_APP_NAME
+#### 🔐 **Optional: Azure AD Integration**
+```
 NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID
-NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_SECRET
+NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_SECRET  
 NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_TENANT_ID
-NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET
 ```
+
+#### ☁️ **Optional: AWS Services**
+```
+AWS_ACCESS_KEY_ID          # AWS access key
+AWS_SECRET_ACCESS_KEY      # AWS secret key
+AWS_REGION                 # AWS region
+```
+
+> **💡 Tip**: Start with just the required secrets for your use case. Add optional ones only when needed.
 
 ### 3. Basic Usage Examples
 

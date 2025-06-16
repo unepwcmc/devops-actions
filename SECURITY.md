@@ -121,16 +121,18 @@ If validation fails:
 ## 🔧 Security Configuration Checklist
 
 ### Repository Setup
-- [ ] Environment secrets configured (staging/production)
-- [ ] SSH keys properly formatted and stored
-- [ ] Registry credentials configured with minimal permissions
+- [ ] **Always Required**: Docker registry credentials (`KAMAL_REGISTRY_USERNAME/PASSWORD`)
+- [ ] **Always Required**: SSH key properly formatted (`SSH_PRIVATE_KEY`)
+- [ ] **If Rails**: Rails master key configured (`RAILS_MASTER_KEY`)
+- [ ] **If Database**: Database credentials configured
+- [ ] **If Notifications**: Slack credentials configured (optional)
 - [ ] `.kamal/secrets-common` file exists (copied from template)
 
 ### Workflow Setup
 - [ ] All deployment workflows include `validate-secrets` action
 - [ ] Workflows use environment variables (`${{ env.* }}`) instead of direct secrets
 - [ ] Proper environment configuration in workflow jobs
-- [ ] Slack notification credentials configured
+- [ ] Only required secrets configured (don't add what you don't need)
 
 ### Security Monitoring
 - [ ] Regular secret rotation schedule

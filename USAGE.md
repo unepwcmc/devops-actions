@@ -4,6 +4,8 @@
 
 This repository provides centralized, reusable GitHub Actions for deploying Rails applications with Kamal (v1 and v2), Nuxt frontend applications, and includes comprehensive security validation and Slack notifications.
 
+> **🚀 Minimal Setup**: Start with just `KAMAL_REGISTRY_USERNAME`, `KAMAL_REGISTRY_PASSWORD`, `SSH_PRIVATE_KEY`, and `RAILS_MASTER_KEY` (for Rails). Add other secrets only when needed.
+
 ## Basic Implementation
 
 ### 1. Backend Rails Application with Kamal v2
@@ -172,45 +174,55 @@ The `validate-secrets` action ensures all required secrets are configured before
 
 ## Required Secrets Configuration
 
-### Core Deployment Secrets
+### ✅ **Always Required**
 ```
-SSH_PRIVATE_KEY                 # SSH key for server access
 KAMAL_REGISTRY_USERNAME         # Docker registry username  
 KAMAL_REGISTRY_PASSWORD         # Docker registry password
+SSH_PRIVATE_KEY                 # SSH key for server access
+```
+
+### 🔧 **Required for Rails Applications**
+```
 RAILS_MASTER_KEY               # Rails master key
 ```
 
-### Database Configuration
+### 💾 **Required if Using Database**
 ```
-DATABASE_HOST                  # Database hostname
+DATABASE_HOSTNAME              # Database hostname
 DATABASE_NAME                  # Database name
 DATABASE_USERNAME              # Database username
 DATABASE_PASSWORD              # Database password
 DATABASE_PORT                  # Database port (default: 5432)
 ```
 
-### Slack Notifications
+### 📢 **Optional: Notifications**
 ```
-SLACK_BOT_TOKEN                # Slack bot token for notifications
-SLACK_CHANNEL_ID               # Slack channel ID for notifications
-```
-
-### Frontend Specific (Nuxt)
-```
-NUXT_API_BASE_URL              # Backend API URL
-NUXT_PUBLIC_APP_URL            # Public frontend URL
-AZURE_AD_CLIENT_ID             # Azure AD client ID
-AZURE_AD_CLIENT_SECRET         # Azure AD client secret
-AZURE_AD_TENANT_ID             # Azure AD tenant ID
+SLACK_BOT_TOKEN                # Slack bot token
+SLACK_CHANNEL_ID               # Slack channel ID
 ```
 
-### AWS Integration (Optional)
+### 🎨 **Optional: Frontend Applications**
+```
+FRONTEND_APP_NAME              # Your frontend app name
+AUTH_ORIGIN                    # Authentication origin
+NUXT_PUBLIC_RAILS_API_SERVER   # Rails API server URL
+```
+
+### 🔐 **Optional: Azure AD Integration**
+```
+NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID
+NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_SECRET
+NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_TENANT_ID
+```
+
+### ☁️ **Optional: AWS Services**
 ```
 AWS_ACCESS_KEY_ID              # AWS access key
 AWS_SECRET_ACCESS_KEY          # AWS secret key
 AWS_REGION                     # AWS region
-AWS_S3_BUCKET_NAME             # S3 bucket name
 ```
+
+> **Start Simple**: Begin with just the always required secrets + what you need for your specific application type.
 
 ## Migration Guide
 
