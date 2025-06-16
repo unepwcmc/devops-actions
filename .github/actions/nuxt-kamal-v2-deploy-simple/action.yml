@@ -1,0 +1,294 @@
+name: 'Nuxt Kamal v2 Deploy (Simplified)'
+description: 'Deploy Nuxt frontend applications using Kamal v2 with simplified configuration - requires validate-secrets action first'
+author: 'WCMC DevOps Team'
+
+inputs:
+  environment:
+    description: 'Environment to deploy to (staging, production)'
+    required: true
+  deployment-strategy:
+    description: 'Deployment strategy (rolling, blue-green, immediate)'
+    required: false
+    default: 'rolling'
+  health-check-enabled:
+    description: 'Enable health checks during deployment'
+    required: false
+    default: 'true'
+  health-check-timeout:
+    description: 'Health check timeout in seconds'
+    required: false
+    default: '300'
+  rollback-on-failure:
+    description: 'Enable automatic rollback on deployment failure'
+    required: false
+    default: 'true'
+  kamal-version:
+    description: 'Kamal v2 version to use'
+    required: false
+    default: '2.5.3'
+  ruby-version:
+    description: 'Ruby version to use'
+    required: false
+    default: '3.3.5'
+  node-version:
+    description: 'Node.js version to use'
+    required: false
+    default: '22.3.0'
+  working-directory:
+    description: 'Working directory for Nuxt application'
+    required: false
+    default: '.'
+
+outputs:
+  deployment-status:
+    description: 'Status of the deployment operation'
+    value: ${{ steps.deploy-result.outputs.status }}
+  deployment-duration:
+    description: 'Duration of the deployment operation in seconds'
+    value: ${{ steps.deploy-result.outputs.duration }}
+  deployed-version:
+    description: 'Version/tag of the deployed application'
+    value: ${{ steps.deploy-result.outputs.version }}
+  rollback-performed:
+    description: 'Whether a rollback was performed'
+    value: ${{ steps.deploy-result.outputs.rollback-performed }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs and environment
+      shell: bash
+      run: |
+        echo "🔍 Validating Nuxt Kamal v2 deployment (simplified)..."
+
+        # Validate environment
+        if [[ ! "${{ inputs.environment }}" =~ ^(staging|production)$ ]]; then
+          echo "❌ Error: environment must be either 'staging' or 'production'"
+          exit 1
+        fi
+
+        # Validate deployment strategy
+        if [[ ! "${{ inputs.deployment-strategy }}" =~ ^(rolling|blue-green|immediate)$ ]]; then
+          echo "❌ Error: deployment-strategy must be one of: rolling, blue-green, immediate"
+          exit 1
+        fi
+
+        # Validate working directory
+        if [[ ! -d "${{ inputs.working-directory }}" ]]; then
+          echo "❌ Error: working-directory '${{ inputs.working-directory }}' does not exist"
+          exit 1
+        fi
+
+        echo "✅ Input validation completed"
+
+    - name: Validate required environment variables
+      shell: bash
+      run: |
+        echo "🔧 Validating required environment variables..."
+        
+        # Core required secrets (should be populated by validate-secrets action)
+        required_vars=(
+          "KAMAL_REGISTRY_USERNAME"
+          "KAMAL_REGISTRY_PASSWORD" 
+          "SSH_PRIVATE_KEY"
+        )
+
+        missing_vars=()
+        for var in "${required_vars[@]}"; do
+          if [[ -z "${!var}" ]]; then
+            missing_vars+=("$var")
+          fi
+        done
+
+        if [[ ${#missing_vars[@]} -gt 0 ]]; then
+          echo "❌ Error: Missing required environment variables:"
+          printf '  - %s\n' "${missing_vars[@]}"
+          echo ""
+          echo "💡 Ensure you run the 'validate-secrets' action before this step:"
+          echo "   - name: Validate and Populate Secrets"
+          echo "     uses: unepwcmc/devops-actions/.github/actions/validate-secrets@v1"
+          echo "     with:"
+          echo "       secrets-file: '.kamal/secrets-common'"
+          echo "       environment: '${{ inputs.environment }}'"
+          exit 1
+        fi
+
+        echo "✅ All required environment variables are present"
+
+    - name: Set deployment times
+      id: set-times
+      shell: bash
+      run: |
+        start_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        echo "start-time=${start_time}" >> $GITHUB_OUTPUT
+        echo "START_TIME=${start_time}" >> $GITHUB_ENV
+        echo "🕐 Deployment started at: ${start_time}"
+
+    - name: Setup Ruby environment
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: ${{ inputs.ruby-version }}
+        bundler-cache: false
+
+    - name: Setup Node.js environment  
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Install Kamal
+      shell: bash
+      run: |
+        echo "📦 Installing Kamal v${{ inputs.kamal-version }}..."
+        gem install kamal -v ${{ inputs.kamal-version }}
+        kamal version
+
+    - name: Setup SSH key
+      shell: bash
+      run: |
+        echo "🔑 Setting up SSH key..."
+        mkdir -p ~/.ssh
+        echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+        chmod 600 ~/.ssh/deploy_key
+        ssh-add ~/.ssh/deploy_key 2>/dev/null || true
+
+    - name: Create Kamal secrets file
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "📝 Creating Kamal secrets file from environment variables..."
+        
+        # Ensure .kamal directory exists
+        mkdir -p .kamal
+        
+        # Create secrets file from environment variables
+        # This reads the template and populates it with actual values
+        if [[ -f ".kamal/secrets-common" ]]; then
+          cp .kamal/secrets-common .kamal/secrets
+          
+          # Replace environment variable references with actual values
+          while IFS= read -r line; do
+            if [[ $line =~ ^([^#=]+)=\$([^=]+)$ ]]; then
+              var_name="${BASH_REMATCH[1]}"
+              env_var="${BASH_REMATCH[2]}"
+              if [[ -n "${!env_var}" ]]; then
+                sed -i "s|${var_name}=\$${env_var}|${var_name}=${!env_var}|g" .kamal/secrets
+              fi
+            fi
+          done < .kamal/secrets-common
+          
+          echo "✅ Kamal secrets file created successfully"
+        else
+          echo "❌ Error: .kamal/secrets-common file not found"
+          echo "Please ensure the secrets template exists"
+          exit 1
+        fi
+
+    - name: Validate Kamal configuration
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🔧 Validating Kamal configuration..."
+        
+        if [[ -f "config/deploy.yml" ]]; then
+          kamal config validate
+          echo "✅ Kamal configuration is valid"
+        else
+          echo "❌ Error: config/deploy.yml not found"
+          echo "Please ensure Kamal configuration exists"
+          exit 1
+        fi
+
+    - name: Deploy with Kamal v2
+      id: deploy
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🚀 Starting Kamal v2 deployment to ${{ inputs.environment }}..."
+        echo "📊 Deployment strategy: ${{ inputs.deployment-strategy }}"
+        
+        # Set deployment environment
+        export KAMAL_ENV="${{ inputs.environment }}"
+        
+        # Deploy based on strategy
+        case "${{ inputs.deployment-strategy }}" in
+          "rolling")
+            echo "🔄 Performing rolling deployment..."
+            kamal deploy
+            ;;
+          "blue-green")
+            echo "🔵🟢 Performing blue-green deployment..."
+            kamal deploy --strategy=blue-green
+            ;;
+          "immediate")
+            echo "⚡ Performing immediate deployment..."
+            kamal deploy --skip-push
+            ;;
+          *)
+            echo "❌ Unknown deployment strategy: ${{ inputs.deployment-strategy }}"
+            exit 1
+            ;;
+        esac
+        
+        echo "✅ Deployment completed successfully"
+
+    - name: Health checks
+      if: inputs.health-check-enabled == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🏥 Running health checks..."
+        
+        # Get the deployed URL from Kamal config if available
+        if command -v kamal &> /dev/null; then
+          echo "🔍 Checking application health..."
+          
+          # Simple health check - can be enhanced based on app requirements
+          timeout ${{ inputs.health-check-timeout }} bash -c '
+            while true; do
+              if kamal app logs --lines 5 | grep -q "listening\|ready\|started"; then
+                echo "✅ Application appears to be healthy"
+                break
+              fi
+              echo "⏳ Waiting for application to be ready..."
+              sleep 10
+            done
+          ' || {
+            echo "❌ Health check timeout after ${{ inputs.health-check-timeout }} seconds"
+            if [[ "${{ inputs.rollback-on-failure }}" == "true" ]]; then
+              echo "🔄 Initiating rollback..."
+              kamal rollback
+              echo "rollback-performed=true" >> $GITHUB_OUTPUT
+            fi
+            exit 1
+          }
+        fi
+
+    - name: Set deployment result
+      id: deploy-result
+      if: always()
+      shell: bash
+      run: |
+        end_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        start_time="${{ steps.set-times.outputs.start-time }}"
+        
+        # Calculate duration
+        start_epoch=$(date -d "$start_time" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$start_time" +%s)
+        end_epoch=$(date -d "$end_time" +%s 2>/dev/null || date +%s)
+        duration=$((end_epoch - start_epoch))
+        
+        echo "end-time=${end_time}" >> $GITHUB_OUTPUT
+        echo "duration=${duration}" >> $GITHUB_OUTPUT
+        
+        if [[ "${{ job.status }}" == "success" ]]; then
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "version=${{ github.sha }}" >> $GITHUB_OUTPUT
+        else
+          echo "status=failure" >> $GITHUB_OUTPUT
+        fi
+        
+        echo "🕐 Deployment ended at: ${end_time}"
+        echo "⏱️  Total duration: ${duration} seconds"
+
+branding:
+  icon: 'upload-cloud'
+  color: 'green' 

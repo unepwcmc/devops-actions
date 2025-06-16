@@ -1,0 +1,132 @@
+name: Kamal v2 Setup (Simplified)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to setup'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      confirm:
+        description: 'Type "CONFIRM" to proceed with setup'
+        required: true
+        type: string
+
+jobs:
+  validate-input:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate confirmation
+        run: |
+          if [[ "${{ github.event.inputs.confirm }}" != "CONFIRM" ]]; then
+            echo "❌ Setup cancelled. You must type 'CONFIRM' to proceed."
+            echo "⚠️  This is a one-time setup operation that will:"
+            echo "   • Initialize Kamal configuration for ${{ github.event.inputs.environment }}"
+            echo "   • Set up Docker containers and services"
+            echo "   • Configure the deployment infrastructure"
+            exit 1
+          fi
+          echo "✅ Setup confirmed for ${{ github.event.inputs.environment }} environment"
+
+  setup:
+    needs: validate-input
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      # Step 1: Validate and populate ALL Kamal secrets from template
+      - name: Validate and Populate Secrets
+        uses: unepwcmc/devops-actions/.github/actions/validate-secrets@v1
+        with:
+          secrets-file: '.kamal/secrets-common'
+          environment: ${{ github.event.inputs.environment }}
+      
+      # Step 2: Start notification (uses GitHub secrets directly)
+      - name: Notify Setup Start
+        id: notify-start
+        uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'started'
+          action-type: 'setup'
+          environment: ${{ github.event.inputs.environment }}
+          repository: ${{ github.repository }}
+          repository-url: ${{ github.server_url }}/${{ github.repository }}
+          action-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          actor: ${{ github.actor }}
+          actor-url: https://github.com/${{ github.actor }}
+          workflow-name: ${{ github.workflow }}
+          run-id: ${{ github.run_id }}
+      
+      # Step 3: Setup (SIMPLIFIED - only needs environment!)
+      - name: Setup Nuxt Kamal v2 (${{ github.event.inputs.environment }})
+        id: setup
+        uses: unepwcmc/devops-actions/.github/actions/nuxt-kamal-v2-setup-simple@v1
+        with:
+          environment: ${{ github.event.inputs.environment }}
+          
+      # Step 4: Setup Summary
+      - name: Setup Summary
+        if: success()
+        run: |
+          echo "🎉 Kamal v2 setup completed successfully!"
+          echo "📊 Setup Summary:"
+          echo "   • Environment: ${{ github.event.inputs.environment }}"
+          echo "   • Duration: ${{ steps.setup.outputs.setup-duration }}s"
+          echo "   • Status: ${{ steps.setup.outputs.setup-status }}"
+          echo "   • Kamal Version: ${{ steps.setup.outputs.kamal-version-used }}"
+          echo ""
+          echo "✅ Your ${{ github.event.inputs.environment }} environment is now ready for deployments!"
+          echo "🚀 You can now deploy using:"
+          if [[ "${{ github.event.inputs.environment }}" == "staging" ]]; then
+            echo "   • Push to main branch for automatic staging deployment"
+            echo "   • Push to staging branch for staging deployment"
+          else
+            echo "   • Create a GitHub Release for production deployment"
+          fi
+          
+      # Step 5: Success notification
+      - name: Notify Setup Success
+        if: success()
+        uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'success'
+          action-type: 'setup'
+          environment: ${{ github.event.inputs.environment }}
+          update-message-ts: ${{ steps.notify-start.outputs.message-ts }}
+          repository: ${{ github.repository }}
+          repository-url: ${{ github.server_url }}/${{ github.repository }}
+          action-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          actor: ${{ github.actor }}
+          actor-url: https://github.com/${{ github.actor }}
+          workflow-name: ${{ github.workflow }}
+          run-id: ${{ github.run_id }}
+          deployment-duration: ${{ steps.setup.outputs.setup-duration }}
+
+      # Step 6: Failure notification
+      - name: Notify Setup Failure
+        if: failure()
+        uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: 'failure'
+          action-type: 'setup'
+          environment: ${{ github.event.inputs.environment }}
+          update-message-ts: ${{ steps.notify-start.outputs.message-ts }}
+          repository: ${{ github.repository }}
+          repository-url: ${{ github.server_url }}/${{ github.repository }}
+          action-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          actor: ${{ github.actor }}
+          actor-url: https://github.com/${{ github.actor }}
+          workflow-name: ${{ github.workflow }}
+          run-id: ${{ github.run_id }}
+          error-message: 'Nuxt Kamal v2 setup failed for ${{ github.event.inputs.environment }} - check logs for details' 

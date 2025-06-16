@@ -44,8 +44,8 @@ jobs:
         if: always()
         uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
         with:
-          slack-bot-token: ${{ env.SLACK_BOT_TOKEN }}
-          slack-channel-id: ${{ env.SLACK_CHANNEL_ID }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
           notification-type: ${{ job.status == 'success' && 'success' || 'failure' }}
           action-type: deploy
           environment: staging
@@ -195,10 +195,12 @@ DATABASE_PASSWORD              # Database password
 DATABASE_PORT                  # Database port (default: 5432)
 ```
 
-### 📢 **Optional: Notifications**
+### 📢 **GitHub Workflow Secrets: Slack Notifications**
+> **Note**: Slack secrets are NOT added to `.kamal/secrets-common` - they're only used by GitHub Actions workflows.
+
 ```
-SLACK_BOT_TOKEN                # Slack bot token
-SLACK_CHANNEL_ID               # Slack channel ID
+SLACK_BOT_TOKEN                # Slack bot token (GitHub Secret only)
+SLACK_CHANNEL_ID               # Slack channel ID (GitHub Secret only)
 ```
 
 ### 🎨 **Optional: Frontend Applications**

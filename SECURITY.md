@@ -43,20 +43,27 @@ The `validate-secrets` action provides secure secrets management:
 
 ### 2. Environment Variables
 
-**Secure Pattern:**
+**Secure Pattern for Kamal Secrets:**
 ```yaml
-# After validate-secrets action
-- name: Deploy
+# After validate-secrets action (for secrets Kamal needs)
+- name: Deploy Kamal
   with:
-    slack-bot-token: ${{ env.SLACK_BOT_TOKEN }}  # ✅ From environment
+    environment: production  # Action reads from ${{ env.* }}
 ```
 
-**Insecure Pattern:**
+**Secure Pattern for Workflow-Only Secrets:**
 ```yaml
-# Direct secrets usage (not recommended)
-- name: Deploy
+# For GitHub Actions workflow secrets (like Slack)
+- name: Slack Notification
   with:
-    slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}  # ❌ Direct access
+    slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}  # ✅ Direct access for workflow-only secrets
+    slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+```
+
+**What NOT to do:**
+```yaml
+# DON'T put Slack secrets in .kamal/secrets-common
+SLACK_BOT_TOKEN=$SLACK_BOT_TOKEN  # ❌ Kamal doesn't need Slack tokens
 ```
 
 ### 3. SSH Keys

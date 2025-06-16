@@ -1,0 +1,264 @@
+name: 'Nuxt Kamal v2 Setup (Simplified)'
+description: 'Setup Nuxt frontend applications for Kamal v2 deployment with simplified configuration - requires validate-secrets action first'
+author: 'WCMC DevOps Team'
+
+inputs:
+  environment:
+    description: 'Environment to setup (staging, production)'
+    required: true
+  kamal-version:
+    description: 'Kamal v2 version to use'
+    required: false
+    default: '2.5.3'
+  ruby-version:
+    description: 'Ruby version to use'
+    required: false
+    default: '3.3.5'
+  node-version:
+    description: 'Node.js version to use'
+    required: false
+    default: '22.3.0'
+  working-directory:
+    description: 'Working directory for Nuxt application'
+    required: false
+    default: '.'
+
+outputs:
+  setup-status:
+    description: 'Status of the setup operation'
+    value: ${{ steps.setup-result.outputs.status }}
+  setup-duration:
+    description: 'Duration of the setup operation in seconds'
+    value: ${{ steps.setup-result.outputs.duration }}
+  kamal-version-used:
+    description: 'Version of Kamal that was used'
+    value: ${{ steps.setup-result.outputs.kamal-version }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs and environment
+      shell: bash
+      run: |
+        echo "🔍 Validating Nuxt Kamal v2 setup (simplified)..."
+
+        # Validate environment
+        if [[ ! "${{ inputs.environment }}" =~ ^(staging|production)$ ]]; then
+          echo "❌ Error: environment must be either 'staging' or 'production'"
+          exit 1
+        fi
+
+        # Validate working directory
+        if [[ ! -d "${{ inputs.working-directory }}" ]]; then
+          echo "❌ Error: working-directory '${{ inputs.working-directory }}' does not exist"
+          exit 1
+        fi
+
+        echo "✅ Input validation completed"
+
+    - name: Validate required environment variables
+      shell: bash
+      run: |
+        echo "🔧 Validating required environment variables..."
+        
+        # Core required secrets (should be populated by validate-secrets action)
+        required_vars=(
+          "KAMAL_REGISTRY_USERNAME"
+          "KAMAL_REGISTRY_PASSWORD" 
+          "SSH_PRIVATE_KEY"
+        )
+
+        missing_vars=()
+        for var in "${required_vars[@]}"; do
+          if [[ -z "${!var}" ]]; then
+            missing_vars+=("$var")
+          fi
+        done
+
+        if [[ ${#missing_vars[@]} -gt 0 ]]; then
+          echo "❌ Error: Missing required environment variables:"
+          printf '  - %s\n' "${missing_vars[@]}"
+          echo ""
+          echo "💡 Ensure you run the 'validate-secrets' action before this step:"
+          echo "   - name: Validate and Populate Secrets"
+          echo "     uses: unepwcmc/devops-actions/.github/actions/validate-secrets@v1"
+          echo "     with:"
+          echo "       secrets-file: '.kamal/secrets-common'"
+          echo "       environment: '${{ inputs.environment }}'"
+          exit 1
+        fi
+
+        echo "✅ All required environment variables are present"
+
+    - name: Set setup times
+      id: set-times
+      shell: bash
+      run: |
+        start_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        echo "start-time=${start_time}" >> $GITHUB_OUTPUT
+        echo "START_TIME=${start_time}" >> $GITHUB_ENV
+        echo "🕐 Setup started at: ${start_time}"
+
+    - name: Setup Ruby environment
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: ${{ inputs.ruby-version }}
+        bundler-cache: false
+
+    - name: Setup Node.js environment  
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Install Kamal
+      shell: bash
+      run: |
+        echo "📦 Installing Kamal v${{ inputs.kamal-version }}..."
+        gem install kamal -v ${{ inputs.kamal-version }}
+        kamal version
+
+    - name: Setup SSH key
+      shell: bash
+      run: |
+        echo "🔑 Setting up SSH key..."
+        mkdir -p ~/.ssh
+        echo "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+        chmod 600 ~/.ssh/deploy_key
+        ssh-add ~/.ssh/deploy_key 2>/dev/null || true
+
+    - name: Create Kamal secrets file
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "📝 Creating Kamal secrets file from environment variables..."
+        
+        # Ensure .kamal directory exists
+        mkdir -p .kamal
+        
+        # Create secrets file from environment variables
+        if [[ -f ".kamal/secrets-common" ]]; then
+          cp .kamal/secrets-common .kamal/secrets
+          
+          # Replace environment variable references with actual values
+          while IFS= read -r line; do
+            if [[ $line =~ ^([^#=]+)=\$([^=]+)$ ]]; then
+              var_name="${BASH_REMATCH[1]}"
+              env_var="${BASH_REMATCH[2]}"
+              if [[ -n "${!env_var}" ]]; then
+                sed -i "s|${var_name}=\$${env_var}|${var_name}=${!env_var}|g" .kamal/secrets
+              fi
+            fi
+          done < .kamal/secrets-common
+          
+          echo "✅ Kamal secrets file created successfully"
+        else
+          echo "❌ Error: .kamal/secrets-common file not found"
+          echo "Please ensure the secrets template exists"
+          exit 1
+        fi
+
+    - name: Validate Kamal configuration
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🔧 Validating Kamal configuration..."
+        
+        if [[ -f "config/deploy.yml" ]]; then
+          kamal config validate
+          echo "✅ Kamal configuration is valid"
+        else
+          echo "❌ Error: config/deploy.yml not found"
+          echo "Please ensure Kamal configuration exists"
+          exit 1
+        fi
+
+    - name: Test SSH connectivity
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🔗 Testing SSH connectivity..."
+        
+        # Extract server hostnames from Kamal config if possible
+        if [[ -f "config/deploy.yml" ]] && command -v kamal &> /dev/null; then
+          # Test basic SSH connectivity
+          kamal server exec --version "echo 'SSH connection test successful'" || {
+            echo "⚠️  SSH connectivity test failed - this may affect deployment"
+            echo "Please ensure:"
+            echo "  - SSH private key is correct"
+            echo "  - Server hostnames are reachable"
+            echo "  - SSH access is configured properly"
+            # Don't fail setup for SSH issues, just warn
+          }
+        fi
+
+    - name: Setup Kamal environment
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🏗️  Setting up Kamal environment for ${{ inputs.environment }}..."
+        
+        # Set deployment environment
+        export KAMAL_ENV="${{ inputs.environment }}"
+        
+        # Run Kamal setup
+        kamal setup || {
+          echo "❌ Kamal setup failed"
+          echo "This may be due to:"
+          echo "  - Missing server configuration"
+          echo "  - SSH connectivity issues"
+          echo "  - Docker registry authentication problems"
+          echo "  - Server permission issues"
+          exit 1
+        }
+        
+        echo "✅ Kamal environment setup completed successfully"
+
+    - name: Verify setup
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🔍 Verifying setup..."
+        
+        # Check if we can access the servers
+        if command -v kamal &> /dev/null; then
+          kamal server exec --version "echo 'Server access verified'" || {
+            echo "⚠️  Server verification failed - deployment may have issues"
+          }
+          
+          # Check docker registry access
+          echo "🐳 Verifying Docker registry access..."
+          kamal registry login || {
+            echo "⚠️  Docker registry login failed - please check credentials"
+          }
+        fi
+        
+        echo "✅ Setup verification completed"
+
+    - name: Set setup result
+      id: setup-result
+      if: always()
+      shell: bash
+      run: |
+        end_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        start_time="${{ steps.set-times.outputs.start-time }}"
+        
+        # Calculate duration
+        start_epoch=$(date -d "$start_time" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$start_time" +%s)
+        end_epoch=$(date -d "$end_time" +%s 2>/dev/null || date +%s)
+        duration=$((end_epoch - start_epoch))
+        
+        echo "duration=${duration}" >> $GITHUB_OUTPUT
+        echo "kamal-version=${{ inputs.kamal-version }}" >> $GITHUB_OUTPUT
+        
+        if [[ "${{ job.status }}" == "success" ]]; then
+          echo "status=success" >> $GITHUB_OUTPUT
+        else
+          echo "status=failure" >> $GITHUB_OUTPUT
+        fi
+        
+        echo "🕐 Setup ended at: ${end_time}"
+        echo "⏱️  Total duration: ${duration} seconds"
+
+branding:
+  icon: 'settings'
+  color: 'blue' 

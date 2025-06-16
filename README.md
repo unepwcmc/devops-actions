@@ -24,31 +24,29 @@ This repository enables multiple projects to reference standardized deployment a
 
 ## 📦 Available Actions
 
-### 🎯 Backend Actions (Rails Applications)
+### ✨ **Simplified Actions (Recommended)**
+- **`validate-secrets`** - Validates and populates secrets from `.kamal/secrets-common` template
+- **`nuxt-kamal-v2-deploy-simple`** - Simplified Nuxt deployment (only needs `environment`)
+- **`nuxt-kamal-v2-setup-simple`** - Simplified Nuxt setup (only needs `environment`)
+- **`slack-notify`** - Slack notifications for workflows (uses GitHub secrets directly)
 
-#### Kamal v2 (Recommended)
-- **`kamal-v2-setup`**: Initial setup and configuration for Kamal v2
-- **`kamal-v2-deploy`**: Full-featured deployment with health checks, rollbacks, and monitoring
+> **💡 New Approach**: These actions use the `validate-secrets` action to automatically populate all needed environment variables. You only need to pass the `environment` parameter!
 
-#### Kamal v1 (Legacy Support)
+### 🔧 **Legacy Actions (Complex Configuration)**
+
+#### Backend Actions (Rails Applications)
+- **`kamal-v2-setup`**: Initial setup and configuration for Kamal v2 (requires all individual secrets)
+- **`kamal-v2-deploy`**: Full-featured deployment (requires all individual secrets)
 - **`kamal-v1-setup`**: Initial setup for Kamal v1 deployments
 - **`kamal-v1-deploy`**: Basic deployment capabilities for legacy projects
 
-### 🎨 Frontend Actions (Nuxt Applications)
-
-#### Nuxt with Kamal v1
+#### Frontend Actions (Nuxt Applications)
 - **`nuxt-kamal-v1-setup`**: Initial setup for Nuxt frontend applications
-- **`nuxt-kamal-v1-deploy`**: Deployment with Azure AD, Rails API integration, and WCMC User Management
+- **`nuxt-kamal-v1-deploy`**: Deployment with Azure AD, Rails API integration
+- **`nuxt-kamal-v2-setup`**: Full Nuxt setup (requires all individual secrets)
+- **`nuxt-kamal-v2-deploy`**: Full Nuxt deployment (requires all individual secrets)
 
-### 📢 Notification Actions
-
-#### Slack Notifications
-- **`slack-notify`**: Rich Slack notifications with start/success/failure states and message updating
-
-### 🔐 Security & Validation Actions
-
-#### Secrets Management
-- **`validate-secrets`**: Validates and populates environment variables from secrets templates
+#### Validation Actions
 - **`validate-workflow`**: Validates workflow configuration and ensures proper setup
 
 ## 🛠 Quick Start
@@ -110,10 +108,12 @@ DATABASE_PASSWORD          # Database password
 DATABASE_PORT              # Database port (usually 5432)
 ```
 
-#### 📢 **Optional: Slack Notifications**
+#### 📢 **GitHub Workflow Secrets: Slack Notifications**
+> **Note**: Slack secrets are NOT added to `.kamal/secrets-common` - they're only used by GitHub Actions workflows.
+
 ```
-SLACK_BOT_TOKEN            # Slack bot token
-SLACK_CHANNEL_ID           # Slack channel ID
+SLACK_BOT_TOKEN            # Slack bot token (GitHub Secret only)
+SLACK_CHANNEL_ID           # Slack channel ID (GitHub Secret only)
 ```
 
 #### 🎨 **Optional: Frontend/Nuxt Applications**
@@ -143,10 +143,10 @@ AWS_REGION                 # AWS region
 
 ### 3. Basic Usage Examples
 
-#### Simple Rails Backend Deployment (Kamal v2)
+#### Simple Nuxt Frontend Deployment (Kamal v2 - Simplified)
 
 ```yaml
-name: Deploy Rails Backend
+name: Deploy Nuxt Frontend
 
 on:
   push:
@@ -155,46 +155,46 @@ on:
 jobs:
   deploy:
     name: Deploy to Production
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     environment: production
     
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # Validate and populate secrets
+      # Step 1: Validate and populate ALL Kamal secrets
       - name: Validate and Populate Secrets
         uses: unepwcmc/devops-actions/.github/actions/validate-secrets@v1
         with:
           secrets-file: '.kamal/secrets-common'
           environment: 'production'
 
-      # Slack Notification: Start
+      # Step 2: Start notification
       - name: Notify Deployment Start
         id: notify-start
         uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
         with:
-          slack-bot-token: ${{ env.SLACK_BOT_TOKEN }}
-          slack-channel-id: ${{ env.SLACK_CHANNEL_ID }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
           notification-type: 'started'
           action-type: 'deploy'
           environment: 'production'
           repository: ${{ github.repository }}
 
-      # Main Deployment
-      - name: Deploy with Kamal v2
+      # Step 3: Deploy (SIMPLIFIED - only needs environment!)
+      - name: Deploy Nuxt Application
         id: deploy
-        uses: unepwcmc/devops-actions/.github/actions/kamal-v2-deploy@v1
+        uses: unepwcmc/devops-actions/.github/actions/nuxt-kamal-v2-deploy-simple@v1
         with:
           environment: 'production'
 
-      # Slack Notification: Success
+      # Step 4: Success notification
       - name: Notify Deployment Success
         if: success()
         uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
         with:
-          slack-bot-token: ${{ env.SLACK_BOT_TOKEN }}
-          slack-channel-id: ${{ env.SLACK_CHANNEL_ID }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
           notification-type: 'success'
           action-type: 'deploy'
           environment: 'production'
@@ -202,13 +202,13 @@ jobs:
           repository: ${{ github.repository }}
           deployment-duration: ${{ steps.deploy.outputs.deployment-duration }}
 
-      # Slack Notification: Failure
+      # Step 5: Failure notification
       - name: Notify Deployment Failure
         if: failure()
         uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
         with:
-          slack-bot-token: ${{ env.SLACK_BOT_TOKEN }}
-          slack-channel-id: ${{ env.SLACK_CHANNEL_ID }}
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
           notification-type: 'failure'
           action-type: 'deploy'
           environment: 'production'
