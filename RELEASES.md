@@ -45,16 +45,18 @@ We'll adopt semantic versioning when:
 ## Current Release
 
 ### v1 (Current)
-**Status**: Early Development - Active
+**Status**: Production Ready - Active
 **Last Updated**: December 2024
 
 **Features:**
 - ✅ Kamal v1 and v2 support
 - ✅ Backend (Rails) and Frontend (Nuxt) actions
-- ✅ Slack notifications
+- ✅ Slack notifications with rich formatting
+- ✅ Security validation with `validate-secrets` action
 - ✅ Comprehensive validation and testing
 - ✅ Multi-environment support
-- ✅ Security best practices
+- ✅ Security best practices and fail-fast validation
+- ✅ Automated environment variable population
 
 **Actions Available:**
 - `kamal-v1-setup` / `kamal-v1-deploy`
@@ -62,6 +64,16 @@ We'll adopt semantic versioning when:
 - `nuxt-kamal-v1-setup` / `nuxt-kamal-v1-deploy`
 - `nuxt-kamal-v2-setup` / `nuxt-kamal-v2-deploy`
 - `slack-notify`
+- `validate-secrets` ✨ **NEW**
+- `validate-workflow` ✨ **NEW**
+
+**Recent Updates (v1.1 - December 2024):**
+- 🔐 **Security Enhancement**: Added `validate-secrets` action for comprehensive secrets validation
+- 📋 **Workflow Validation**: Added `validate-workflow` action to ensure proper workflow configuration
+- 🔄 **Environment Variables**: Automatic population of environment variables from validated secrets
+- 🛡️ **Fail-Fast Validation**: Early detection of missing configuration with clear error messages
+- 📚 **Documentation Updates**: Comprehensive updates to README.md and USAGE.md reflecting new patterns
+- 🏗️ **Template System**: Standardized secrets template system with `.kamal/secrets-common.template`
 
 ## Migration Guide
 

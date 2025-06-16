@@ -2,7 +2,7 @@
 
 ## Quick Start
 
-This repository provides centralized, reusable GitHub Actions for deploying Rails applications with Kamal (v1 and v2) and Slack notifications.
+This repository provides centralized, reusable GitHub Actions for deploying Rails applications with Kamal (v1 and v2), Nuxt frontend applications, and includes comprehensive security validation and Slack notifications.
 
 ## Basic Implementation
 
@@ -17,21 +17,20 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment: staging
     steps:
       - uses: actions/checkout@v4
+      
+      - name: Validate and Populate Secrets
+        uses: unepwcmc/devops-actions/.github/actions/validate-secrets@v1
+        with:
+          secrets-file: '.kamal/secrets-common'
+          environment: 'staging'
       
       - name: Setup Kamal v2
         uses: unepwcmc/devops-actions/.github/actions/kamal-v2-setup@v1
         with:
           environment: staging
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-          kamal-registry-username: ${{ secrets.KAMAL_REGISTRY_USERNAME }}
-          kamal-registry-password: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
-          rails-master-key: ${{ secrets.RAILS_MASTER_KEY }}
-          database-host: ${{ secrets.DATABASE_HOST }}
-          database-name: ${{ secrets.DATABASE_NAME }}
-          database-username: ${{ secrets.DATABASE_USERNAME }}
-          database-password: ${{ secrets.DATABASE_PASSWORD }}
           
       - name: Deploy with Kamal v2
         uses: unepwcmc/devops-actions/.github/actions/kamal-v2-deploy@v1
@@ -43,7 +42,8 @@ jobs:
         if: always()
         uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
         with:
-          slack-webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          slack-bot-token: ${{ env.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ env.SLACK_CHANNEL_ID }}
           notification-type: ${{ job.status == 'success' && 'success' || 'failure' }}
           action-type: deploy
           environment: staging
@@ -143,6 +143,33 @@ jobs:
           # ... other configuration
 ```
 
+## Security & Validation
+
+### Using validate-secrets Action
+
+The `validate-secrets` action ensures all required secrets are configured before deployment:
+
+```yaml
+- name: Validate and Populate Secrets
+  uses: unepwcmc/devops-actions/.github/actions/validate-secrets@v1
+  with:
+    secrets-file: '.kamal/secrets-common'     # Path to your secrets template
+    environment: 'production'                 # GitHub environment name
+```
+
+**What it does:**
+- ✅ Checks that `.kamal/secrets-common` file exists
+- ✅ Extracts all required variable names from the file
+- ✅ Validates that each secret exists in your GitHub environment
+- ✅ Populates environment variables for use in subsequent steps
+- ❌ Fails early with clear error messages if secrets are missing
+
+**Benefits:**
+- 🛡️ **Security**: Prevents deployments with missing credentials
+- 🚀 **Fail Fast**: Catches configuration issues before deployment starts
+- 📋 **Clear Guidance**: Shows exactly which secrets are missing and where to add them
+- 🔄 **Environment Variables**: Automatically populates `${{ env.* }}` variables
+
 ## Required Secrets Configuration
 
 ### Core Deployment Secrets
@@ -164,7 +191,8 @@ DATABASE_PORT                  # Database port (default: 5432)
 
 ### Slack Notifications
 ```
-SLACK_WEBHOOK_URL              # Slack webhook for notifications
+SLACK_BOT_TOKEN                # Slack bot token for notifications
+SLACK_CHANNEL_ID               # Slack channel ID for notifications
 ```
 
 ### Frontend Specific (Nuxt)

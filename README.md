@@ -45,6 +45,12 @@ This repository enables multiple projects to reference standardized deployment a
 #### Slack Notifications
 - **`slack-notify`**: Rich Slack notifications with start/success/failure states and message updating
 
+### 🔐 Security & Validation Actions
+
+#### Secrets Management
+- **`validate-secrets`**: Validates and populates environment variables from secrets templates
+- **`validate-workflow`**: Validates workflow configuration and ensures proper setup
+
 ## 🛠 Quick Start
 
 ### 1. Copy Example Workflows
@@ -53,12 +59,21 @@ Choose the appropriate workflow from our examples:
 
 - **`.github/workflows/kamal-v1-backend-example.yml`** - Rails backend with Kamal v1
 - **`.github/workflows/kamal-v2-backend-example.yml`** - Rails backend with Kamal v2  
-- **`.github/workflows/nuxt-frontend-example.yml`** - Nuxt frontend deployment
+- **`.github/workflows/nuxt-frontend-v1-example.yml`** - Nuxt frontend with Kamal v1
+- **`.github/workflows/nuxt-frontend-v2-example.yml`** - Nuxt frontend with Kamal v2
 - **`.github/workflows/kamal-setup-example.yml`** - Initial setup workflows
+- **`.github/workflows/consumer-example.yml`** - Complete reference guide
 
 ### 2. Configure Secrets
 
-Add these secrets to your repository:
+#### Create Secrets File
+First, copy the secrets template:
+```bash
+cp .kamal/secrets-common.template .kamal/secrets-common
+```
+
+#### Add Secrets to GitHub Environment
+Add these secrets to your repository's environment (staging/production):
 
 #### Core Deployment Secrets
 ```
@@ -80,6 +95,8 @@ DATABASE_PORT
 SLACK_BOT_TOKEN
 SLACK_CHANNEL_ID
 ```
+
+> **Note**: With the new `validate-secrets` action, these secrets are automatically populated as environment variables, so workflows use `${{ env.SLACK_BOT_TOKEN }}` instead of `${{ secrets.SLACK_BOT_TOKEN }}`.
 
 #### Optional Enhancement Secrets
 ```
@@ -126,13 +143,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Validate and populate secrets
+      - name: Validate and Populate Secrets
+        uses: unepwcmc/devops-actions/.github/actions/validate-secrets@v1
+        with:
+          secrets-file: '.kamal/secrets-common'
+          environment: 'production'
+
       # Slack Notification: Start
       - name: Notify Deployment Start
         id: notify-start
         uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
         with:
-          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
-          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          slack-bot-token: ${{ env.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ env.SLACK_CHANNEL_ID }}
           notification-type: 'started'
           action-type: 'deploy'
           environment: 'production'
@@ -144,25 +168,14 @@ jobs:
         uses: unepwcmc/devops-actions/.github/actions/kamal-v2-deploy@v1
         with:
           environment: 'production'
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-          kamal-registry-username: ${{ secrets.KAMAL_REGISTRY_USERNAME }}
-          kamal-registry-password: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
-          rails-master-key: ${{ secrets.RAILS_MASTER_KEY }}
-          rails-default-public-app-host: ${{ secrets.RAILS_DEFAULT_PUBLIC_APP_HOST }}
-          rails-default-public-app-host-protocol: ${{ secrets.RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL }}
-          database-env-prefix: 'MY_APP'  # Change to your project's prefix
-          database-host: ${{ secrets.DATABASE_HOST }}
-          database-name: ${{ secrets.DATABASE_NAME }}
-          database-username: ${{ secrets.DATABASE_USERNAME }}
-          database-password: ${{ secrets.DATABASE_PASSWORD }}
 
       # Slack Notification: Success
       - name: Notify Deployment Success
         if: success()
         uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
         with:
-          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
-          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          slack-bot-token: ${{ env.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ env.SLACK_CHANNEL_ID }}
           notification-type: 'success'
           action-type: 'deploy'
           environment: 'production'
@@ -175,8 +188,8 @@ jobs:
         if: failure()
         uses: unepwcmc/devops-actions/.github/actions/slack-notify@v1
         with:
-          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
-          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          slack-bot-token: ${{ env.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ env.SLACK_CHANNEL_ID }}
           notification-type: 'failure'
           action-type: 'deploy'
           environment: 'production'
@@ -431,12 +444,20 @@ uses: unepwcmc/devops-actions/.github/actions/kamal-v2-deploy@main  # latest
 4. Update this README if needed
 5. Create a pull request
 
+## 📚 Documentation
+
+- **[USAGE.md](USAGE.md)** - Comprehensive usage guide with examples
+- **[SECURITY.md](SECURITY.md)** - Security features and best practices  
+- **[RELEASES.md](RELEASES.md)** - Version history and release notes
+
 ## 📞 Support
 
 For issues, questions, or feature requests:
 1. Check existing issues
 2. Create a new issue with detailed information
 3. Contact the WCMC DevOps team
+
+For security issues, see [SECURITY.md](SECURITY.md)
 
 ---
 
