@@ -128,7 +128,7 @@ runs:
       uses: slackapi/slack-github-action@v1.26.0
       with:
         channel-id: ${{ inputs.slack-channel-id }}
-        payload-file-path: .github/notifications/slack/${{ steps.template.outputs.template }}
+        payload-file-path: ${{ github.action_path }}/templates/${{ steps.template.outputs.template }}
         payload-file-path-parsed: true
         update-ts: ${{ inputs.update-ts || inputs.update-message-ts }}
       env:
