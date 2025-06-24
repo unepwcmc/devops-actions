@@ -104,6 +104,22 @@ runs:
           exit 1
         fi
 
+    - name: Set default values for empty variables
+      shell: bash
+      run: |
+        # Set default values for empty environment variables to prevent JSON parsing errors
+        echo "START_TIME=${START_TIME:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}" >> $GITHUB_ENV
+        echo "END_TIME=${END_TIME:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}" >> $GITHUB_ENV
+        echo "DEPLOYMENT_DURATION=${DEPLOYMENT_DURATION:-'N/A'}" >> $GITHUB_ENV
+        echo "KAMAL_VERSION=${KAMAL_VERSION:-'N/A'}" >> $GITHUB_ENV
+        echo "CUSTOM_MESSAGE=${CUSTOM_MESSAGE:-''}" >> $GITHUB_ENV
+      env:
+        START_TIME: ${{ inputs.start-time }}
+        END_TIME: ${{ inputs.end-time }}
+        DEPLOYMENT_DURATION: ${{ inputs.deployment-duration }}
+        KAMAL_VERSION: ${{ inputs.kamal-version }}
+        CUSTOM_MESSAGE: ${{ inputs.custom-message }}
+
     - name: Set notification template
       id: template
       shell: bash
