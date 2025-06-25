@@ -22,58 +22,6 @@ inputs:
     description: 'Working directory for Nuxt application'
     required: false
     default: '.'
-  ssh-private-key:
-    description: 'SSH private key for server access'
-    required: true
-  kamal-registry-username:
-    description: 'Docker registry username'
-    required: true
-  kamal-registry-password:
-    description: 'Docker registry password'
-    required: true
-  gh-token:
-    description: 'GitHub token for package access'
-    required: true
-  web-server-dns-name:
-    description: 'Web server DNS name for SSH connection'
-    required: true
-  # Rails API Integration
-  rails-master-key:
-    description: 'Rails master key for API integration'
-    required: true
-  rails-default-public-app-host:
-    description: 'Rails default public app host'
-    required: true
-  rails-default-public-app-host-protocol:
-    description: 'Rails default public app host protocol'
-    required: true
-  # Frontend-specific secrets
-  frontend-app-name:
-    description: 'Frontend application name'
-    required: true
-  auth-origin:
-    description: 'Authentication origin URL'
-    required: true
-  nuxt-public-rails-api-server:
-    description: 'Nuxt public Rails API server URL'
-    required: true
-  # Azure AD Configuration
-  azure-ad-client-id:
-    description: 'Azure AD Client ID'
-    required: true
-  azure-ad-client-secret:
-    description: 'Azure AD Client Secret'
-    required: true
-  azure-ad-tenant-id:
-    description: 'Azure AD Tenant ID'
-    required: true
-  # WCMC User Management Module
-  wcmc-user-management-secret:
-    description: 'WCMC User Management Secret'
-    required: true
-  wcmc-user-management-rails-api-server:
-    description: 'WCMC User Management Rails API Server URL'
-    required: true
   # Optional configurations
   additional-env-vars:
     description: 'Additional environment variables in KEY=VALUE format, one per line'
@@ -149,6 +97,17 @@ runs:
           "KAMAL_REGISTRY_USERNAME"
           "SSH_PRIVATE_KEY"
           "WEB_SERVER_DNS_NAME"
+          "RAILS_MASTER_KEY"
+          "RAILS_DEFAULT_PUBLIC_APP_HOST"
+          "RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL"
+          "FRONTEND_APP_NAME"
+          "AUTH_ORIGIN"
+          "NUXT_PUBLIC_RAILS_API_SERVER"
+          "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID"
+          "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_SECRET"
+          "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_TENANT_ID"
+          "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET"
+          "NUXT_PUBLIC_WCMC_MODULES_WCMC_USER_MANAGEMENT_RAILS_API_SERVER"
         )
 
         for var_name in "${var_names[@]}"; do
@@ -220,21 +179,21 @@ runs:
 
         # Core secrets
         cat <<EOF > "$env_file"
-        RAILS_MASTER_KEY=${{ inputs.rails-master-key }}
-        RAILS_DEFAULT_PUBLIC_APP_HOST=${{ inputs.rails-default-public-app-host }}
-        RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL=${{ inputs.rails-default-public-app-host-protocol }}
-        KAMAL_REGISTRY_USERNAME=${{ inputs.kamal-registry-username }}
-        KAMAL_REGISTRY_PASSWORD=${{ inputs.kamal-registry-password }}
-        FRONTEND_APP_NAME=${{ inputs.frontend-app-name }}
-        AUTH_ORIGIN=${{ inputs.auth-origin }}
-        NUXT_PUBLIC_RAILS_API_SERVER=${{ inputs.nuxt-public-rails-api-server }}
-        NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID=${{ inputs.azure-ad-client-id }}
-        NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_SECRET=${{ inputs.azure-ad-client-secret }}
-        NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_TENANT_ID=${{ inputs.azure-ad-tenant-id }}
-        NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET=${{ inputs.wcmc-user-management-secret }}
-        NUXT_PUBLIC_WCMC_MODULES_WCMC_USER_MANAGEMENT_RAILS_API_SERVER=${{ inputs.wcmc-user-management-rails-api-server }}
-        WEB_SERVER_DNS_NAME=${{ inputs.web-server-dns-name }}
-        GH_TOKEN=${{ inputs.gh-token }}
+        RAILS_MASTER_KEY=${RAILS_MASTER_KEY}
+        RAILS_DEFAULT_PUBLIC_APP_HOST=${RAILS_DEFAULT_PUBLIC_APP_HOST}
+        RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL=${RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL}
+        KAMAL_REGISTRY_USERNAME=${KAMAL_REGISTRY_USERNAME}
+        KAMAL_REGISTRY_PASSWORD=${KAMAL_REGISTRY_PASSWORD}
+        FRONTEND_APP_NAME=${FRONTEND_APP_NAME}
+        AUTH_ORIGIN=${AUTH_ORIGIN}
+        NUXT_PUBLIC_RAILS_API_SERVER=${NUXT_PUBLIC_RAILS_API_SERVER}
+        NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID=${NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID}
+        NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_SECRET=${NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_SECRET}
+        NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_TENANT_ID=${NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_TENANT_ID}
+        NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET=${NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET}
+        NUXT_PUBLIC_WCMC_MODULES_WCMC_USER_MANAGEMENT_RAILS_API_SERVER=${NUXT_PUBLIC_WCMC_MODULES_WCMC_USER_MANAGEMENT_RAILS_API_SERVER}
+        WEB_SERVER_DNS_NAME=${WEB_SERVER_DNS_NAME}
+        GH_TOKEN=${GH_TOKEN}
         EOF
 
         # Add additional environment variables if provided
