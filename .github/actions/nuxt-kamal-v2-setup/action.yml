@@ -396,19 +396,19 @@ runs:
 
         # Builder configuration for Nuxt applications
         builder:
+          arch: amd64
           dockerfile: Dockerfile
           context: .
 
-        # Health check configuration
-        healthcheck:
-          path: "/api/health"
-          port: 3000
-          max_attempts: 7
-          interval: 20s
-
-        # Traefik configuration (if using)
-        traefik:
+        # Kamal Proxy configuration (replaces Traefik in v2)
+        proxy:
           host: <%= ENV["WEB_SERVER_DNS_NAME"] %>
+          app_port: 3000
+          ssl: false
+          healthcheck:
+            path: "/api/health"
+            interval: 10
+            timeout: 5
 
         # Logging configuration
         logging:
@@ -419,6 +419,11 @@ runs:
 
         # Asset configuration for Nuxt
         asset_path: /app/public
+
+        # Deploy timeout settings
+        deploy_timeout: 300
+        drain_timeout: 30
+        readiness_delay: 10
         EOF
 
         echo "✅ Kamal v2 configuration created: $config_file"
