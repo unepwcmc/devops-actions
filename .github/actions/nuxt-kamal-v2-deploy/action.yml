@@ -322,8 +322,8 @@ runs:
           echo "✅ Kamal v2 deployment completed successfully for ${{ inputs.environment }}"
           echo "deploy_status=success" >> $GITHUB_OUTPUT
 
-          # Get deployed version/tag
-          deployed_version=$(kamal app version --destination ${{ inputs.environment }} 2>/dev/null || echo "unknown")
+          # Get deployed version/tag (capture output safely)
+          deployed_version=$(kamal app version --destination ${{ inputs.environment }} 2>/dev/null | head -n1 | tr -d '\n' || echo "unknown")
           echo "deployed_version=${deployed_version}" >> $GITHUB_OUTPUT
         else
           echo "❌ Kamal v2 deployment failed for ${{ inputs.environment }}"
@@ -373,10 +373,30 @@ runs:
         echo "🔄 Deployment failed, attempting automatic rollback for ${{ inputs.environment }}..."
 
         # Attempt rollback using Kamal v2
-        if kamal app rollback --destination ${{ inputs.environment }}; then
-          echo "✅ Rollback completed successfully for ${{ inputs.environment }}"
-          echo "rollback_performed=true" >> $GITHUB_OUTPUT
+        echo "🔍 Checking available rollback commands..."
+        
+        # Try different rollback command variations
+        if kamal app rollback --destination ${{ inputs.environment }} 2>/dev/null; then
+          echo "✅ Rollback completed successfully using 'kamal app rollback' for ${{ inputs.environment }}"
+          rollback_success=true
+        elif kamal rollback --destination ${{ inputs.environment }} 2>/dev/null; then
+          echo "✅ Rollback completed successfully using 'kamal rollback' for ${{ inputs.environment }}"
+          rollback_success=true
+        else
+          echo "❌ Rollback failed - trying alternative approaches for ${{ inputs.environment }}"
+          # Try without destination flag as fallback
+          if kamal app rollback 2>/dev/null; then
+            echo "✅ Rollback completed using fallback command for ${{ inputs.environment }}"
+            rollback_success=true
+          else
+            echo "❌ All rollback attempts failed for ${{ inputs.environment }}"
+            rollback_success=false
+          fi
+        fi
 
+        if [[ "$rollback_success" == "true" ]]; then
+          echo "rollback_performed=true" >> $GITHUB_OUTPUT
+          
           # Verify rollback health
           if kamal app details --destination ${{ inputs.environment }} 2>/dev/null | grep -q "running\|healthy"; then
             echo "✅ Rollback verification successful - application is healthy in ${{ inputs.environment }}"
@@ -384,7 +404,6 @@ runs:
             echo "⚠️  Warning: Rollback completed but health verification failed for ${{ inputs.environment }}"
           fi
         else
-          echo "❌ Rollback failed for ${{ inputs.environment }}"
           echo "rollback_performed=false" >> $GITHUB_OUTPUT
         fi
 

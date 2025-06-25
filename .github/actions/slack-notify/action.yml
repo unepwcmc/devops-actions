@@ -94,8 +94,11 @@ runs:
           exit 1
         fi
 
-        if [[ ! "${{ inputs.action-type }}" =~ ^(deploy|setup|provision|test)$ ]]; then
-          echo "Error: action-type must be one of: deploy, setup, provision, test"
+        # Convert action-type to lowercase for validation
+        action_type_lower=$(echo "${{ inputs.action-type }}" | tr '[:upper:]' '[:lower:]')
+        if [[ ! "$action_type_lower" =~ ^(deploy|setup|provision|test)$ ]]; then
+          echo "Error: action-type must be one of: deploy, setup, provision, test (case insensitive)"
+          echo "Received: ${{ inputs.action-type }}"
           exit 1
         fi
 
