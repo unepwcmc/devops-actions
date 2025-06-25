@@ -196,6 +196,21 @@ runs:
           echo "Please ensure SSH access is configured properly"
         fi
 
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      with:
+        install: true
+        version: v0.17.1
+
+    - name: Verify Docker Buildx setup
+      shell: bash
+      run: |
+        echo "🐳 Verifying Docker Buildx setup..."
+        docker buildx version
+        docker buildx create --name mybuilder --driver docker-container --use || docker buildx use mybuilder
+        docker buildx inspect --bootstrap
+        echo "✅ Docker Buildx configured successfully"
+
     - name: Validate project configuration
       shell: bash
       working-directory: ${{ inputs.working-directory }}
