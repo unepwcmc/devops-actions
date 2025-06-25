@@ -323,7 +323,10 @@ runs:
           echo "deploy_status=success" >> $GITHUB_OUTPUT
 
           # Get deployed version/tag (capture output safely)
-          deployed_version=$(kamal app version --destination ${{ inputs.environment }} 2>/dev/null | head -n1 | tr -d '\n' || echo "unknown")
+          deployed_version=$(kamal app version --destination ${{ inputs.environment }} 2>/dev/null | tail -n1 | tr -d '\n\r' | sed 's/[^a-zA-Z0-9._-]//g' || echo "unknown")
+          if [[ -z "$deployed_version" || "$deployed_version" == *"INFO"* ]]; then
+            deployed_version="unknown"
+          fi
           echo "deployed_version=${deployed_version}" >> $GITHUB_OUTPUT
         else
           echo "❌ Kamal v2 deployment failed for ${{ inputs.environment }}"
@@ -338,6 +341,9 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       run: |
         echo "🏥 Performing post-deployment health checks for ${{ inputs.environment }}..."
+
+        # Disable exit on error for health checks to prevent premature exit
+        set +e
 
         timeout_seconds="${{ inputs.health-check-timeout }}"
         check_interval=10
@@ -392,6 +398,9 @@ runs:
           sleep $check_interval
           elapsed=$((elapsed + check_interval))
         done
+
+        # Re-enable exit on error
+        set -e
 
         if [ "$health_check_passed" = true ]; then
           echo "✅ Health checks passed"
