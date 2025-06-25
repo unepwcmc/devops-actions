@@ -358,19 +358,27 @@ runs:
           if echo "$app_details_output" | grep -qi "running\|healthy\|up\|started"; then
             echo "✅ Health indicator found in app details"
             ((health_indicators++))
+          else
+            echo "⚠️  No health indicator found in app details"
           fi
           
           # Check 2: Check if app is responding to basic commands
           if kamal app version --destination ${{ inputs.environment }} >/dev/null 2>&1; then
             echo "✅ App responding to version command"
             ((health_indicators++))
+          else
+            echo "⚠️  App not responding to version command"
           fi
           
           # Check 3: Try to get app logs (if app is running, this should work)
           if kamal app logs --destination ${{ inputs.environment }} --lines 1 >/dev/null 2>&1; then
             echo "✅ App logs accessible"
             ((health_indicators++))
+          else
+            echo "⚠️  App logs not accessible"
           fi
+
+          echo "🔍 Health indicators: ${health_indicators}/3 positive"
 
           # If we have at least 2 positive health indicators, consider it healthy
           if [ $health_indicators -ge 2 ]; then
@@ -404,20 +412,46 @@ runs:
         echo "🔄 Deployment failed, attempting automatic rollback for ${{ inputs.environment }}..."
 
         # Attempt rollback using Kamal v2
-        echo "🔍 Checking available rollback commands..."
+        echo "🔍 Attempting rollback for ${{ inputs.environment }}..."
+        rollback_success=false
         
-        # Try different rollback command variations
-        if kamal app rollback --destination ${{ inputs.environment }} 2>/dev/null; then
-          echo "✅ Rollback completed successfully using 'kamal app rollback' for ${{ inputs.environment }}"
-          rollback_success=true
-        elif kamal rollback --destination ${{ inputs.environment }} 2>/dev/null; then
-          echo "✅ Rollback completed successfully using 'kamal rollback' for ${{ inputs.environment }}"
-          rollback_success=true
-        else
-          echo "❌ Rollback failed - trying alternative approaches for ${{ inputs.environment }}"
-          # Try without destination flag as fallback
-          if kamal app rollback 2>/dev/null; then
-            echo "✅ Rollback completed using fallback command for ${{ inputs.environment }}"
+        # First, try to get available containers to find a rollback target
+        echo "🔍 Checking available containers for rollback..."
+        containers_output=$(kamal app containers --destination ${{ inputs.environment }} -q 2>/dev/null || echo "")
+        
+        if [[ -n "$containers_output" ]]; then
+          echo "📋 Available containers:"
+          echo "$containers_output"
+          
+          # Try to extract a previous version hash from container names
+          # Look for stopped/exited containers that could be rollback targets
+          previous_version=$(echo "$containers_output" | grep -E "(Exited|stopped)" | head -n1 | sed -n 's/.*-\([a-f0-9]\{40\}\).*/\1/p' | head -c40)
+          
+          if [[ -n "$previous_version" && ${#previous_version} -eq 40 ]]; then
+            echo "🎯 Found potential rollback target: $previous_version"
+            
+            # Try rollback with specific version
+            if kamal rollback "$previous_version" --destination ${{ inputs.environment }} 2>/dev/null; then
+              echo "✅ Rollback completed successfully using version $previous_version for ${{ inputs.environment }}"
+              rollback_success=true
+            else
+              echo "❌ Rollback with specific version failed"
+            fi
+          else
+            echo "⚠️  Could not identify a suitable rollback target from container list"
+          fi
+        fi
+        
+        # If version-specific rollback failed, try generic approaches
+        if [[ "$rollback_success" != "true" ]]; then
+          echo "🔄 Trying generic rollback commands..."
+          
+          # Try app rollback (might work without version in some cases)
+          if kamal app rollback --destination ${{ inputs.environment }} 2>/dev/null; then
+            echo "✅ Rollback completed using 'kamal app rollback' for ${{ inputs.environment }}"
+            rollback_success=true
+          elif kamal rollback --destination ${{ inputs.environment }} 2>/dev/null; then
+            echo "✅ Rollback completed using 'kamal rollback' for ${{ inputs.environment }}"
             rollback_success=true
           else
             echo "❌ All rollback attempts failed for ${{ inputs.environment }}"
