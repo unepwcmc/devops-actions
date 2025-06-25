@@ -138,14 +138,7 @@ runs:
       shell: bash
       run: |
         echo "🔧 Validating required environment variables for setup..."
-        required_vars=(
-          "${{ inputs.gh-token }}"
-          "${{ inputs.kamal-registry-password }}"
-          "${{ inputs.kamal-registry-username }}"
-          "${{ inputs.ssh-private-key }}"
-          "${{ inputs.web-server-dns-name }}"
-        )
-
+        
         var_names=(
           "GH_TOKEN"
           "KAMAL_REGISTRY_PASSWORD"
@@ -154,12 +147,13 @@ runs:
           "WEB_SERVER_DNS_NAME"
         )
 
-        for i in "${!required_vars[@]}"; do
-          if [[ -z "${required_vars[$i]}" ]]; then
-            echo "❌ Error: ${var_names[$i]} is not set or empty"
+        for var_name in "${var_names[@]}"; do
+          if [[ -z "${!var_name}" ]]; then
+            echo "❌ Error: ${var_name} is not set or empty"
+            echo "Please add this secret to your GitHub environment (${{ inputs.environment }})"
             exit 1
           else
-            echo "✅ ${var_names[$i]} is set"
+            echo "✅ ${var_name} is set"
           fi
         done
 
