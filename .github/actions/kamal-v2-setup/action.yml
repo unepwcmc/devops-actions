@@ -34,56 +34,11 @@ inputs:
     description: 'Path to Kamal config file relative to working directory'
     required: false
     default: 'config/deploy.yml'
-  ssh-private-key:
-    description: 'SSH private key for server access'
-    required: true
-  kamal-registry-username:
-    description: 'Docker registry username'
-    required: true
-  kamal-registry-password:
-    description: 'Docker registry password'
-    required: true
-  rails-master-key:
-    description: 'Rails master key'
-    required: true
-  rails-default-public-app-host:
-    description: 'Rails default public app host'
-    required: true
-  rails-default-public-app-host-protocol:
-    description: 'Rails default public app host protocol'
-    required: true
-  database-host:
-    description: 'Database hostname'
-    required: true
-  database-name:
-    description: 'Database name'
-    required: true
-  database-username:
-    description: 'Database username'
-    required: true
-  database-password:
-    description: 'Database password'
-    required: true
   database-port:
     description: 'Database port'
     required: false
     default: '5432'
-  aws-access-key-id:
-    description: 'AWS Access Key ID'
-    required: false
-  aws-secret-access-key:
-    description: 'AWS Secret Access Key'
-    required: false
-  aws-region:
-    description: 'AWS Region'
-    required: false
-  # Redis Configuration
-  redis-username:
-    description: 'Redis username'
-    required: false
-  redis-password:
-    description: 'Redis password'
-    required: false
+  # Redis Configuration defaults
   redis-host:
     description: 'Redis host'
     required: false
@@ -96,49 +51,11 @@ inputs:
     description: 'Redis database number for Sidekiq'
     required: false
     default: '1'
-  # Mail Configuration
-  mail-username:
-    description: 'Mail server username'
-    required: false
-  mail-password:
-    description: 'Mail server password'
-    required: false
-  # AWS S3 Configuration
-  aws-s3-access-key-id:
-    description: 'AWS S3 Access Key ID'
-    required: false
-  aws-s3-secret-access-key:
-    description: 'AWS S3 Secret Access Key'
-    required: false
-  aws-s3-region:
-    description: 'AWS S3 Region'
-    required: false
-  aws-s3-bucket-name:
-    description: 'AWS S3 Bucket Name'
-    required: false
   # Project-specific Database Naming
   database-env-prefix:
     description: 'Database environment variable prefix (e.g., OCEAN_CENSUS, TARGET_TRACKER)'
     required: false
     default: 'TARGET_TRACKER'
-  # Frontend Integration (for projects with frontend components)
-  frontend-app-name:
-    description: 'Frontend application name'
-    required: false
-  # Azure AD Integration (for WCMC User Management)
-  azure-ad-client-id:
-    description: 'Azure AD Client ID for WCMC User Management'
-    required: false
-  azure-ad-client-secret:
-    description: 'Azure AD Client Secret for WCMC User Management'
-    required: false
-  azure-ad-tenant-id:
-    description: 'Azure AD Tenant ID for WCMC User Management'
-    required: false
-  # WCMC User Management Module
-  wcmc-user-management-secret:
-    description: 'WCMC User Management Secret'
-    required: false
   # Generic Additional Secrets
   additional-secrets:
     description: 'Additional secrets in KEY=VALUE format, one per line'
@@ -202,6 +119,62 @@ runs:
 
         echo "✅ Input validation completed"
 
+    - name: Validate required environment variables
+      shell: bash
+      run: |
+        echo "🔧 Validating required environment variables for Kamal v2 setup..."
+        
+        var_names=(
+          "SSH_PRIVATE_KEY"
+          "KAMAL_REGISTRY_USERNAME"
+          "KAMAL_REGISTRY_PASSWORD"
+          "RAILS_MASTER_KEY"
+          "RAILS_DEFAULT_PUBLIC_APP_HOST"
+          "RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL"
+          "DATABASE_HOST"
+          "DATABASE_NAME"
+          "DATABASE_USERNAME"
+          "DATABASE_PASSWORD"
+        )
+
+        for var_name in "${var_names[@]}"; do
+          if [[ -z "${!var_name}" ]]; then
+            echo "❌ Error: ${var_name} is not set or empty"
+            echo "Please add this secret to your GitHub environment (${{ inputs.environment }})"
+            exit 1
+          else
+            echo "✅ ${var_name} is set"
+          fi
+        done
+
+        # Optional environment variables (will warn if missing but not fail)
+        optional_vars=(
+          "AWS_ACCESS_KEY_ID"
+          "AWS_SECRET_ACCESS_KEY"
+          "AWS_REGION"
+          "REDIS_USERNAME"
+          "REDIS_PASSWORD"
+          "MAIL_USERNAME"
+          "MAIL_PASSWORD"
+          "AWS_S3_ACCESS_KEY_ID"
+          "AWS_S3_SECRET_ACCESS_KEY"
+          "AWS_S3_REGION"
+          "AWS_S3_BUCKET_NAME"
+          "FRONTEND_APP_NAME"
+          "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID"
+          "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_SECRET"
+          "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_TENANT_ID"
+          "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET"
+        )
+
+        for var_name in "${optional_vars[@]}"; do
+          if [[ -z "${!var_name}" ]]; then
+            echo "ℹ️  Optional: ${var_name} is not set (will be skipped)"
+          else
+            echo "✅ Optional: ${var_name} is set"
+          fi
+        done
+
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
@@ -237,7 +210,7 @@ runs:
     - name: Set up SSH
       uses: webfactory/ssh-agent@v0.9.0
       with:
-        ssh-private-key: ${{ inputs.ssh-private-key }}
+        ssh-private-key: ${{ env.SSH_PRIVATE_KEY }}
 
     - name: Test SSH connectivity
       shell: bash
@@ -295,67 +268,67 @@ runs:
 
         # Base secrets
         cat <<EOF > "$secrets_file"
-        KAMAL_REGISTRY_USERNAME=${{ inputs.kamal-registry-username }}
-        KAMAL_REGISTRY_PASSWORD=${{ inputs.kamal-registry-password }}
-        RAILS_MASTER_KEY=${{ inputs.rails-master-key }}
-        RAILS_DEFAULT_PUBLIC_APP_HOST=${{ inputs.rails-default-public-app-host }}
-        RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL=${{ inputs.rails-default-public-app-host-protocol }}
-        ${{ inputs.database-env-prefix }}_DATABASE_HOSTNAME=${{ inputs.database-host }}
-        ${{ inputs.database-env-prefix }}_DATABASE_NAME=${{ inputs.database-name }}
-        ${{ inputs.database-env-prefix }}_DATABASE_USERNAME=${{ inputs.database-username }}
-        ${{ inputs.database-env-prefix }}_DATABASE_PASSWORD=${{ inputs.database-password }}
+        KAMAL_REGISTRY_USERNAME=${KAMAL_REGISTRY_USERNAME}
+        KAMAL_REGISTRY_PASSWORD=${KAMAL_REGISTRY_PASSWORD}
+        RAILS_MASTER_KEY=${RAILS_MASTER_KEY}
+        RAILS_DEFAULT_PUBLIC_APP_HOST=${RAILS_DEFAULT_PUBLIC_APP_HOST}
+        RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL=${RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL}
+        ${{ inputs.database-env-prefix }}_DATABASE_HOSTNAME=${DATABASE_HOST}
+        ${{ inputs.database-env-prefix }}_DATABASE_NAME=${DATABASE_NAME}
+        ${{ inputs.database-env-prefix }}_DATABASE_USERNAME=${DATABASE_USERNAME}
+        ${{ inputs.database-env-prefix }}_DATABASE_PASSWORD=${DATABASE_PASSWORD}
         ${{ inputs.database-env-prefix }}_DATABASE_PORT=${{ inputs.database-port }}
         EOF
 
         # Add Redis configuration if provided
-        if [[ -n "${{ inputs.redis-username }}" && -n "${{ inputs.redis-password }}" ]]; then
-          echo "REDIS_USERNAME=${{ inputs.redis-username }}" >> "$secrets_file"
-          echo "REDIS_PASSWORD=${{ inputs.redis-password }}" >> "$secrets_file"
-          echo "SIDEKIQ_REDIS_URL=redis://${{ inputs.redis-username }}:${{ inputs.redis-password }}@${{ inputs.redis-host }}:${{ inputs.redis-port }}/${{ inputs.redis-database }}" >> "$secrets_file"
+        if [[ -n "${REDIS_USERNAME}" && -n "${REDIS_PASSWORD}" ]]; then
+          echo "REDIS_USERNAME=${REDIS_USERNAME}" >> "$secrets_file"
+          echo "REDIS_PASSWORD=${REDIS_PASSWORD}" >> "$secrets_file"
+          echo "SIDEKIQ_REDIS_URL=redis://${REDIS_USERNAME}:${REDIS_PASSWORD}@${{ inputs.redis-host }}:${{ inputs.redis-port }}/${{ inputs.redis-database }}" >> "$secrets_file"
           echo "✅ Added Redis configuration with Sidekiq URL"
         fi
 
         # Add Mail configuration if provided
-        if [[ -n "${{ inputs.mail-username }}" && -n "${{ inputs.mail-password }}" ]]; then
-          echo "MAIL_USERNAME=${{ inputs.mail-username }}" >> "$secrets_file"
-          echo "MAIL_PASSWORD=${{ inputs.mail-password }}" >> "$secrets_file"
+        if [[ -n "${MAIL_USERNAME}" && -n "${MAIL_PASSWORD}" ]]; then
+          echo "MAIL_USERNAME=${MAIL_USERNAME}" >> "$secrets_file"
+          echo "MAIL_PASSWORD=${MAIL_PASSWORD}" >> "$secrets_file"
           echo "✅ Added Mail server configuration"
         fi
 
         # Add AWS general secrets if provided
-        if [[ -n "${{ inputs.aws-access-key-id }}" ]]; then
-          echo "AWS_ACCESS_KEY_ID=${{ inputs.aws-access-key-id }}" >> "$secrets_file"
-          echo "AWS_SECRET_ACCESS_KEY=${{ inputs.aws-secret-access-key }}" >> "$secrets_file"
-          echo "AWS_REGION=${{ inputs.aws-region }}" >> "$secrets_file"
+        if [[ -n "${AWS_ACCESS_KEY_ID}" ]]; then
+          echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> "$secrets_file"
+          echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}" >> "$secrets_file"
+          echo "AWS_REGION=${AWS_REGION}" >> "$secrets_file"
           echo "✅ Added AWS general configuration"
         fi
 
         # Add AWS S3 specific secrets if provided
-        if [[ -n "${{ inputs.aws-s3-access-key-id }}" ]]; then
-          echo "AWS_S3_ACCESS_KEY_ID=${{ inputs.aws-s3-access-key-id }}" >> "$secrets_file"
-          echo "AWS_S3_SECRET_ACCESS_KEY=${{ inputs.aws-s3-secret-access-key }}" >> "$secrets_file"
-          echo "AWS_S3_REGION=${{ inputs.aws-s3-region }}" >> "$secrets_file"
-          echo "AWS_S3_NAME=${{ inputs.aws-s3-bucket-name }}" >> "$secrets_file"
+        if [[ -n "${AWS_S3_ACCESS_KEY_ID}" ]]; then
+          echo "AWS_S3_ACCESS_KEY_ID=${AWS_S3_ACCESS_KEY_ID}" >> "$secrets_file"
+          echo "AWS_S3_SECRET_ACCESS_KEY=${AWS_S3_SECRET_ACCESS_KEY}" >> "$secrets_file"
+          echo "AWS_S3_REGION=${AWS_S3_REGION}" >> "$secrets_file"
+          echo "AWS_S3_NAME=${AWS_S3_BUCKET_NAME}" >> "$secrets_file"
           echo "✅ Added AWS S3 configuration"
         fi
 
         # Add Frontend Integration if provided
-        if [[ -n "${{ inputs.frontend-app-name }}" ]]; then
-          echo "FRONTEND_APP_NAME=${{ inputs.frontend-app-name }}" >> "$secrets_file"
+        if [[ -n "${FRONTEND_APP_NAME}" ]]; then
+          echo "FRONTEND_APP_NAME=${FRONTEND_APP_NAME}" >> "$secrets_file"
           echo "✅ Added Frontend integration configuration"
         fi
 
         # Add Azure AD configuration if provided
-        if [[ -n "${{ inputs.azure-ad-client-id }}" ]]; then
-          echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID=${{ inputs.azure-ad-client-id }}" >> "$secrets_file"
-          echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_SECRET=${{ inputs.azure-ad-client-secret }}" >> "$secrets_file"
-          echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_TENANT_ID=${{ inputs.azure-ad-tenant-id }}" >> "$secrets_file"
+        if [[ -n "${NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID}" ]]; then
+          echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID=${NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID}" >> "$secrets_file"
+          echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_SECRET=${NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_SECRET}" >> "$secrets_file"
+          echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_TENANT_ID=${NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_TENANT_ID}" >> "$secrets_file"
           echo "✅ Added Azure AD configuration for WCMC User Management"
         fi
 
         # Add WCMC User Management configuration if provided
-        if [[ -n "${{ inputs.wcmc-user-management-secret }}" ]]; then
-          echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET=${{ inputs.wcmc-user-management-secret }}" >> "$secrets_file"
+        if [[ -n "${NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET}" ]]; then
+          echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET=${NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET}" >> "$secrets_file"
           echo "✅ Added WCMC User Management configuration"
         fi
 

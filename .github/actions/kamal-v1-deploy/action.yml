@@ -1,5 +1,5 @@
 name: 'Kamal v1 Deploy'
-description: 'Deploy Rails application using Kamal v1 (legacy support) with deployment best practices, health checks, and rollback capabilities'
+description: 'Deploy Rails applications using Kamal v1 with comprehensive configuration and best practices'
 author: 'WCMC DevOps Team'
 
 inputs:
@@ -7,69 +7,38 @@ inputs:
     description: 'Environment to deploy to (staging, production)'
     required: true
   kamal-version:
-    description: 'Kamal v1 version to use'
+    description: 'Kamal version to use'
     required: false
-    default: '1.9.0'
+    default: '1.4.0'
   ruby-version:
     description: 'Ruby version to use'
     required: false
-    default: '3.3.5'
+    default: '3.2.0'
+  node-version:
+    description: 'Node.js version to use'
+    required: false
+    default: '22.3.0'
+  buildx-version:
+    description: 'Docker Buildx version to use'
+    required: false
+    default: 'v0.17.1'
   working-directory:
     description: 'Working directory for Rails application'
     required: false
     default: '.'
-  kamal-config-path:
-    description: 'Path to Kamal config file relative to working directory'
-    required: false
-    default: 'config/deploy.yml'
   dockerfile-path:
     description: 'Path to Dockerfile relative to working directory'
     required: false
     default: 'Dockerfile'
-  ssh-private-key:
-    description: 'SSH private key for server access'
-    required: true
-  kamal-registry-username:
-    description: 'Docker registry username'
-    required: true
-  kamal-registry-password:
-    description: 'Docker registry password'
-    required: true
-  rails-master-key:
-    description: 'Rails master key'
-    required: true
-  database-host:
-    description: 'Database hostname'
-    required: true
-  database-name:
-    description: 'Database name'
-    required: true
-  database-username:
-    description: 'Database username'
-    required: true
-  database-password:
-    description: 'Database password'
-    required: true
+  kamal-config-path:
+    description: 'Path to Kamal config file relative to working directory'
+    required: false
+    default: 'config/deploy.yml'
   database-port:
     description: 'Database port'
     required: false
     default: '5432'
-  aws-access-key-id:
-    description: 'AWS Access Key ID'
-    required: false
-  aws-secret-access-key:
-    description: 'AWS Secret Access Key'
-    required: false
-  aws-region:
-    description: 'AWS Region'
-    required: false
-  # Redis Configuration
-  redis-username:
-    description: 'Redis username'
-    required: false
-  redis-password:
-    description: 'Redis password'
-    required: false
+  # Redis Configuration defaults
   redis-host:
     description: 'Redis host'
     required: false
@@ -82,82 +51,38 @@ inputs:
     description: 'Redis database number for Sidekiq'
     required: false
     default: '1'
-  # Mail Configuration
-  mail-username:
-    description: 'Mail server username'
-    required: false
-  mail-password:
-    description: 'Mail server password'
-    required: false
-  # AWS S3 Configuration
-  aws-s3-access-key-id:
-    description: 'AWS S3 Access Key ID'
-    required: false
-  aws-s3-secret-access-key:
-    description: 'AWS S3 Secret Access Key'
-    required: false
-  aws-s3-region:
-    description: 'AWS S3 Region'
-    required: false
-  aws-s3-bucket-name:
-    description: 'AWS S3 Bucket Name'
-    required: false
   # Project-specific Database Naming
   database-env-prefix:
     description: 'Database environment variable prefix (e.g., OCEAN_CENSUS, TARGET_TRACKER)'
     required: false
     default: 'TARGET_TRACKER'
-  # Frontend Integration (for projects with frontend components)
-  frontend-app-name:
-    description: 'Frontend application name'
+  # Deployment options
+  deployment-strategy:
+    description: 'Deployment strategy (rolling, blue-green, immediate)'
     required: false
-  # Azure AD Integration (for WCMC User Management)
-  azure-ad-client-id:
-    description: 'Azure AD Client ID for WCMC User Management'
+    default: 'rolling'
+  health-check-enabled:
+    description: 'Enable health checks during deployment'
     required: false
-  azure-ad-client-secret:
-    description: 'Azure AD Client Secret for WCMC User Management'
+    default: 'true'
+  rollback-on-failure:
+    description: 'Enable automatic rollback on deployment failure'
     required: false
-  azure-ad-tenant-id:
-    description: 'Azure AD Tenant ID for WCMC User Management'
+    default: 'true'
+  maintenance-mode:
+    description: 'Enable maintenance mode during deployment'
     required: false
-  # WCMC User Management Module
-  wcmc-user-management-secret:
-    description: 'WCMC User Management Secret'
-    required: false
+    default: 'false'
   # Generic Additional Secrets
   additional-secrets:
     description: 'Additional secrets in KEY=VALUE format, one per line'
     required: false
   pre-deploy-commands:
-    description: 'Commands to run before deployment'
+    description: 'Additional commands to run before deployment'
     required: false
   post-deploy-commands:
-    description: 'Commands to run after successful deployment'
+    description: 'Additional commands to run after successful deployment'
     required: false
-  enable-health-checks:
-    description: 'Enable health checks after deployment'
-    required: false
-    default: 'true'
-  health-check-url:
-    description: 'Health check URL to test after deployment'
-    required: false
-  health-check-timeout:
-    description: 'Health check timeout in seconds'
-    required: false
-    default: '300'
-  enable-rollback-on-failure:
-    description: 'Enable automatic rollback on deployment failure'
-    required: false
-    default: 'true'
-  deployment-strategy:
-    description: 'Deployment strategy: rolling or immediate (limited options for v1)'
-    required: false
-    default: 'rolling'
-  enable-maintenance-mode:
-    description: 'Enable maintenance mode during deployment'
-    required: false
-    default: 'false'
 
 outputs:
   deployment-status:
@@ -166,12 +91,6 @@ outputs:
   deployment-duration:
     description: 'Duration of the deployment operation in seconds'
     value: ${{ steps.deploy-result.outputs.duration }}
-  deployed-version:
-    description: 'Version that was deployed'
-    value: ${{ steps.deploy-result.outputs.version }}
-  rollback-performed:
-    description: 'Whether a rollback was performed'
-    value: ${{ steps.deploy-result.outputs.rollback }}
 
 runs:
   using: 'composite'
@@ -187,33 +106,47 @@ runs:
           exit 1
         fi
 
-        # Validate deployment strategy (v1 has limited options)
-        if [[ ! "${{ inputs.deployment-strategy }}" =~ ^(rolling|immediate)$ ]]; then
-          echo "❌ Error: deployment-strategy for v1 must be one of: rolling, immediate"
+        # Validate deployment strategy
+        if [[ ! "${{ inputs.deployment-strategy }}" =~ ^(rolling|blue-green|immediate)$ ]]; then
+          echo "❌ Error: deployment-strategy must be one of: rolling, blue-green, immediate"
           exit 1
         fi
 
-        # Validate working directory
+        # Validate working directory exists
         if [[ ! -d "${{ inputs.working-directory }}" ]]; then
           echo "❌ Error: working-directory '${{ inputs.working-directory }}' does not exist"
           exit 1
         fi
 
-        # Validate required files
-        dockerfile_path="${{ inputs.working-directory }}/${{ inputs.dockerfile-path }}"
-        kamal_config_path="${{ inputs.working-directory }}/${{ inputs.kamal-config-path }}"
+        echo "✅ Input validation completed for Kamal v1 deployment"
 
-        if [[ ! -f "$dockerfile_path" ]]; then
-          echo "❌ Error: Dockerfile not found at '$dockerfile_path'"
-          exit 1
-        fi
+    - name: Validate required environment variables
+      shell: bash
+      run: |
+        echo "🔧 Validating required environment variables for Kamal v1 deployment..."
+        
+        var_names=(
+          "SSH_PRIVATE_KEY"
+          "KAMAL_REGISTRY_USERNAME"
+          "KAMAL_REGISTRY_PASSWORD"
+          "RAILS_MASTER_KEY"
+          "RAILS_DEFAULT_PUBLIC_APP_HOST"
+          "RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL"
+          "DATABASE_HOST"
+          "DATABASE_NAME"
+          "DATABASE_USERNAME"
+          "DATABASE_PASSWORD"
+        )
 
-        if [[ ! -f "$kamal_config_path" ]]; then
-          echo "❌ Error: Kamal config not found at '$kamal_config_path'"
-          exit 1
-        fi
-
-        echo "✅ Input validation completed for Kamal v1"
+        for var_name in "${var_names[@]}"; do
+          if [[ -z "${!var_name}" ]]; then
+            echo "❌ Error: ${var_name} is not set or empty"
+            echo "Please add this secret to your GitHub environment (${{ inputs.environment }})"
+            exit 1
+          else
+            echo "✅ ${var_name} is set"
+          fi
+        done
 
     - name: Set up Ruby
       uses: ruby/setup-ruby@v1
