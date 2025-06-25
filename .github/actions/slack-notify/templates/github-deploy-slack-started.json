@@ -1,11 +1,11 @@
 {
-  "text": "🚀 GitHub Action Deploy Started (In Progress)",
+  "text": "🚀 GitHub Action ${{ env.ACTION_TYPE }} Started (In Progress)",
   "blocks": [
     {
       "type": "header",
       "text": {
         "type": "plain_text",
-        "text": "🚀 Deploy to ${{ env.ENVIRONMENT }} Started",
+        "text": "🚀 ${{ env.ACTION_TYPE }} to ${{ env.ENVIRONMENT }} Started",
         "emoji": true
       }
     },
@@ -14,7 +14,7 @@
       "fields": [
         {
           "type": "mrkdwn",
-          "text": "*Job*\nDeploy to ${{ env.ENVIRONMENT }}"
+          "text": "*Job*\n${{ env.ACTION_TYPE }} to ${{ env.ENVIRONMENT }}"
         },
         {
           "type": "mrkdwn",
@@ -73,7 +73,7 @@
   "attachments": [
     {
       "color": "#dbab09",
-      "fallback": "GitHub Action: Deploy to ${{ env.ENVIRONMENT }} started at ${{ env.START_TIME }} (In Progress)"
+      "fallback": "GitHub Action: ${{ env.ACTION_TYPE }} to ${{ env.ENVIRONMENT }} started at ${{ env.START_TIME }} (In Progress)"
     }
   ]
 }

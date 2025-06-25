@@ -1,11 +1,11 @@
 {
-  "text": "❌ GitHub Action Deploy Failed",
+  "text": "❌ GitHub Action ${{ env.ACTION_TYPE }} Failed",
   "blocks": [
     {
       "type": "header",
       "text": {
         "type": "plain_text",
-        "text": "❌ Deploy to ${{ env.ENVIRONMENT }} Failed",
+        "text": "❌ ${{ env.ACTION_TYPE }} to ${{ env.ENVIRONMENT }} Failed",
         "emoji": true
       }
     },
@@ -14,7 +14,7 @@
       "fields": [
         {
           "type": "mrkdwn",
-          "text": "*Job*\nDeploy to ${{ env.ENVIRONMENT }}"
+          "text": "*Job*\n${{ env.ACTION_TYPE }} to ${{ env.ENVIRONMENT }}"
         },
         {
           "type": "mrkdwn",
@@ -80,7 +80,7 @@
   "attachments": [
     {
       "color": "#ff0000",
-      "fallback": "GitHub Action: Deploy to ${{ env.ENVIRONMENT }} failed at ${{ env.END_TIME }} (Failure)"
+      "fallback": "GitHub Action: ${{ env.ACTION_TYPE }} to ${{ env.ENVIRONMENT }} failed at ${{ env.END_TIME }} (Failure)"
     }
   ]
 }

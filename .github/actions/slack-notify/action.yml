@@ -58,7 +58,7 @@ inputs:
   failure-reason:
     description: 'Reason for failure (for failure notifications)'
     required: false
-    default: 'Check logs for details'
+    default: 'GitHub Action failed - check logs for details'
   update-ts:
     description: 'Timestamp to update an existing message'
     required: false
@@ -113,6 +113,18 @@ runs:
         echo "DEPLOYMENT_DURATION=${DEPLOYMENT_DURATION:-'N/A'}" >> $GITHUB_ENV
         echo "KAMAL_VERSION=${KAMAL_VERSION:-'N/A'}" >> $GITHUB_ENV
         echo "CUSTOM_MESSAGE=${CUSTOM_MESSAGE:-''}" >> $GITHUB_ENV
+        
+        # Format ACTION_TYPE for better display (capitalize first letter)
+        action_type="${{ inputs.action-type }}"
+        formatted_action_type="$(echo ${action_type:0:1} | tr '[:lower:]' '[:upper:]')${action_type:1}"
+        echo "ACTION_TYPE=${formatted_action_type}" >> $GITHUB_ENV
+        
+        # Improve FAILURE_REASON if it's just 'failure'
+        failure_reason="${{ inputs.failure-reason }}"
+        if [[ "$failure_reason" == "failure" ]]; then
+          failure_reason="GitHub Action failed - check logs for details"
+        fi
+        echo "FAILURE_REASON=${failure_reason}" >> $GITHUB_ENV
       env:
         START_TIME: ${{ inputs.start-time }}
         END_TIME: ${{ inputs.end-time }}
@@ -161,10 +173,8 @@ runs:
         ACTOR_URL: ${{ inputs.actor-url }}
         WORKFLOW_NAME: ${{ inputs.workflow-name }}
         RUN_ID: ${{ inputs.run-id }}
-        FAILURE_REASON: ${{ inputs.failure-reason }}
         ERROR_MESSAGE: ${{ inputs.error-message }}
         DEPLOYMENT_DURATION: ${{ inputs.deployment-duration }}
-        ACTION_TYPE: ${{ inputs.action-type }}
         KAMAL_VERSION: ${{ inputs.kamal-version }}
         CUSTOM_MESSAGE: ${{ inputs.custom-message }}
 

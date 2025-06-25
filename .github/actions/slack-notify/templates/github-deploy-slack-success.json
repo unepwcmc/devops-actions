@@ -1,11 +1,11 @@
 {
-  "text": "✅ GitHub Action Deploy Completed",
+  "text": "✅ GitHub Action ${{ env.ACTION_TYPE }} Completed",
   "blocks": [
     {
       "type": "header",
       "text": {
         "type": "plain_text",
-        "text": "✅ Deploy to ${{ env.ENVIRONMENT }} Completed",
+        "text": "✅ ${{ env.ACTION_TYPE }} to ${{ env.ENVIRONMENT }} Completed",
         "emoji": true
       }
     },
@@ -14,7 +14,7 @@
       "fields": [
         {
           "type": "mrkdwn",
-          "text": "*Job*\nDeploy to ${{ env.ENVIRONMENT }}"
+          "text": "*Job*\n${{ env.ACTION_TYPE }} to ${{ env.ENVIRONMENT }}"
         },
         {
           "type": "mrkdwn",
@@ -73,7 +73,7 @@
   "attachments": [
     {
       "color": "#28a745",
-      "fallback": "GitHub Action: Deploy to ${{ env.ENVIRONMENT }} completed at ${{ env.END_TIME }} (Completed)"
+      "fallback": "GitHub Action: ${{ env.ACTION_TYPE }} to ${{ env.ENVIRONMENT }} completed at ${{ env.END_TIME }} (Completed)"
     }
   ]
 }
