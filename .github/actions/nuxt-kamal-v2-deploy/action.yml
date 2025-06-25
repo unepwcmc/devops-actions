@@ -227,14 +227,14 @@ runs:
     - name: Set up SSH
       uses: webfactory/ssh-agent@v0.9.0
       with:
-        ssh-private-key: ${{ inputs.ssh-private-key }}
+        ssh-private-key: ${{ env.SSH_PRIVATE_KEY }}
 
     - name: Test SSH connection
       if: inputs.enable-ssh-test == 'true'
       shell: bash
       run: |
         echo "🔐 Testing SSH connection to deployment server..."
-        if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -T wcmc@${{ inputs.web-server-dns-name }} echo "SSH connection successful"; then
+        if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -T wcmc@${{ env.WEB_SERVER_DNS_NAME }} echo "SSH connection successful"; then
           echo "✅ SSH connection successful"
         else
           echo "❌ SSH connection failed"
