@@ -305,9 +305,12 @@ runs:
         echo "🔍 Verifying Kamal v2 configuration before deployment..."
 
         # Check for required Kamal v2 configuration files
-        if [[ ! -f "config/deploy.yml" ]]; then
-          echo "❌ Error: config/deploy.yml not found - required for Kamal v2 deployment"
+        config_file="config/deploy.${{ inputs.environment }}.yml"
+        if [[ ! -f "$config_file" ]]; then
+          echo "❌ Error: $config_file not found - required for Kamal v2 deployment"
           exit 1
+        else
+          echo "✅ Kamal v2 configuration file found: $config_file"
         fi
 
         # Verify secrets file
@@ -318,10 +321,10 @@ runs:
 
         # Test Kamal v2 configuration syntax
         echo "🔧 Testing Kamal v2 configuration syntax..."
-        if kamal config 2>/dev/null; then
-          echo "✅ Kamal v2 configuration is valid"
+        if kamal config --destination ${{ inputs.environment }} 2>/dev/null; then
+          echo "✅ Kamal v2 configuration is valid for ${{ inputs.environment }}"
         else
-          echo "❌ Error: Kamal v2 configuration has syntax errors"
+          echo "❌ Error: Kamal v2 configuration has syntax errors for ${{ inputs.environment }}"
           exit 1
         fi
 
@@ -348,15 +351,15 @@ runs:
         fi
 
         # Perform Kamal v2 deployment
-        if kamal deploy $verbose_flag; then
-          echo "✅ Kamal v2 deployment completed successfully"
+        if kamal deploy --destination ${{ inputs.environment }} $verbose_flag; then
+          echo "✅ Kamal v2 deployment completed successfully for ${{ inputs.environment }}"
           echo "deploy_status=success" >> $GITHUB_OUTPUT
 
           # Get deployed version/tag
-          deployed_version=$(kamal app version 2>/dev/null || echo "unknown")
+          deployed_version=$(kamal app version --destination ${{ inputs.environment }} 2>/dev/null || echo "unknown")
           echo "deployed_version=${deployed_version}" >> $GITHUB_OUTPUT
         else
-          echo "❌ Kamal v2 deployment failed"
+          echo "❌ Kamal v2 deployment failed for ${{ inputs.environment }}"
           echo "deploy_status=failed" >> $GITHUB_OUTPUT
           echo "deployed_version=failed" >> $GITHUB_OUTPUT
           exit 1
@@ -377,8 +380,8 @@ runs:
           echo "🔍 Checking application health... (${elapsed}s/${timeout_seconds}s)"
 
           # Check if services are running (Kamal v2 syntax)
-          if kamal app details 2>/dev/null | grep -q "running\|healthy"; then
-            echo "✅ Application is healthy and running"
+          if kamal app details --destination ${{ inputs.environment }} 2>/dev/null | grep -q "running\|healthy"; then
+            echo "✅ Application is healthy and running in ${{ inputs.environment }}"
             break
           fi
 
@@ -403,18 +406,18 @@ runs:
         echo "🔄 Deployment failed, attempting automatic rollback..."
 
         # Attempt rollback using Kamal v2
-        if kamal app rollback; then
-          echo "✅ Rollback completed successfully"
+        if kamal app rollback --destination ${{ inputs.environment }}; then
+          echo "✅ Rollback completed successfully for ${{ inputs.environment }}"
           echo "rollback_performed=true" >> $GITHUB_OUTPUT
 
           # Verify rollback health
-          if kamal app details 2>/dev/null | grep -q "running\|healthy"; then
-            echo "✅ Rollback verification successful - application is healthy"
+          if kamal app details --destination ${{ inputs.environment }} 2>/dev/null | grep -q "running\|healthy"; then
+            echo "✅ Rollback verification successful - application is healthy in ${{ inputs.environment }}"
           else
-            echo "⚠️  Warning: Rollback completed but health verification failed"
+            echo "⚠️  Warning: Rollback completed but health verification failed for ${{ inputs.environment }}"
           fi
         else
-          echo "❌ Rollback failed"
+          echo "❌ Rollback failed for ${{ inputs.environment }}"
           echo "rollback_performed=false" >> $GITHUB_OUTPUT
         fi
 
