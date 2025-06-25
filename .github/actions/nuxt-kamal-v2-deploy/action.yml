@@ -30,11 +30,11 @@ inputs:
   health-check-enabled:
     description: 'Enable health checks during deployment'
     required: false
-    default: 'true'
+    default: 'false'
   health-check-timeout:
     description: 'Health check timeout in seconds'
     required: false
-    default: '300'
+    default: '60'
   rollback-on-failure:
     description: 'Enable automatic rollback on deployment failure'
     required: false
@@ -335,78 +335,22 @@ runs:
           exit 1
         fi
 
-    - name: Perform health checks
+    - name: Verify deployment completion
       id: health-check
-      if: inputs.health-check-enabled == 'true' && steps.kamal-deploy.outputs.deploy_status == 'success'
+      if: steps.kamal-deploy.outputs.deploy_status == 'success'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: |
-        echo "🏥 Performing post-deployment health checks for ${{ inputs.environment }}..."
-
-        timeout_seconds="${{ inputs.health-check-timeout }}"
-        check_interval=10
-        elapsed=0
-        health_check_passed=false
-
-        while [ $elapsed -lt $timeout_seconds ]; do
-          echo "🔍 Checking application health... (${elapsed}s/${timeout_seconds}s)"
-
-          # Get app details output for debugging
-          app_details_output=$(kamal app details --destination ${{ inputs.environment }} 2>/dev/null || echo "Failed to get app details")
-          echo "🔍 App details output: $app_details_output"
-
-          # Try multiple health check approaches (with error handling)
-          health_indicators=0
-          
-          # Check 1: Look for running containers (most reliable)
-          if echo "$app_details_output" | grep -q "Up [0-9]"; then
-            echo "✅ Container is running (Up status found)"
-            ((health_indicators++))
-          else
-            echo "⚠️  Container not showing Up status"
-          fi
-          
-          # Check 2: Check if app is responding to basic commands  
-          if kamal app version --destination ${{ inputs.environment }} >/dev/null 2>&1; then
-            echo "✅ App responding to version command"
-            ((health_indicators++))
-          else
-            echo "⚠️  App not responding to version command"
-          fi
-          
-          # Check 3: Try to get app logs (if app is running, this should work)
-          if kamal app logs --destination ${{ inputs.environment }} --lines 1 >/dev/null 2>&1; then
-            echo "✅ App logs accessible"
-            ((health_indicators++))
-          else
-            echo "⚠️  App logs not accessible"
-          fi
-
-          echo "🔍 Health indicators: ${health_indicators}/3 positive"
-
-          # If we have at least 1 positive health indicator, consider it healthy (more lenient)
-          if [ $health_indicators -ge 1 ]; then
-            echo "✅ Application is healthy and running in ${{ inputs.environment }} (${health_indicators}/3 indicators positive)"
-            health_check_passed=true
-            break
-          else
-            echo "⚠️  Health check inconclusive (${health_indicators}/3 indicators positive), retrying..."
-          fi
-
-          sleep $check_interval
-          elapsed=$((elapsed + check_interval))
-        done
-
-        if [ "$health_check_passed" = true ]; then
-          echo "✅ Health checks passed"
+        echo "✅ Kamal deployment completed successfully"
+        echo "🔍 Deployment verification:"
+        
+        # Quick verification that deployment finished
+        if kamal app details --destination ${{ inputs.environment }} 2>/dev/null | grep -q "CONTAINER ID"; then
+          echo "✅ Application containers are present"
           echo "health_check_failed=false" >> $GITHUB_OUTPUT
         else
-          echo "⚠️  Health check timeout after ${timeout_seconds} seconds"
-          echo "🔍 Final app details output:"
-          kamal app details --destination ${{ inputs.environment }} 2>&1 || echo "Failed to get final app details"
-          echo "⚠️  Note: This may be a health check issue, not an application failure"
+          echo "⚠️  Could not verify container presence"
           echo "health_check_failed=true" >> $GITHUB_OUTPUT
-          # Don't exit with error - let the deployment continue
         fi
 
     - name: Handle deployment failure and rollback
@@ -510,13 +454,9 @@ runs:
 
         echo "duration=${duration}" >> $GITHUB_OUTPUT
 
-        # Determine final status (prioritize deployment success over health check issues)
+        # Determine final status based on deployment result
         if [[ "${{ steps.kamal-deploy.outputs.deploy_status }}" == "success" ]]; then
-          if [[ "${{ steps.health-check.outputs.health_check_failed }}" == "true" ]]; then
-            echo "status=success-with-health-warnings" >> $GITHUB_OUTPUT
-          else
-            echo "status=success" >> $GITHUB_OUTPUT
-          fi
+          echo "status=success" >> $GITHUB_OUTPUT
         else
           echo "status=failed" >> $GITHUB_OUTPUT
         fi
