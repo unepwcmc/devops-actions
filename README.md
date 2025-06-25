@@ -263,34 +263,38 @@ jobs:
 
 #### Nuxt Frontend Deployment
 
+> **⚠️ Important**: All actions now use environment variables instead of input parameters for secrets.
+
 ```yaml
-      # Nuxt Frontend Deployment  
+      # Nuxt Frontend Deployment - Environment variables are set automatically
       - name: Deploy Nuxt Frontend
         uses: unepwcmc/devops-actions/.github/actions/nuxt-kamal-v1-deploy@v1
         with:
           environment: 'staging'
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-          kamal-registry-username: ${{ secrets.KAMAL_REGISTRY_USERNAME }}
-          kamal-registry-password: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
-          gh-token: ${{ secrets.GH_TOKEN }}
-          web-server-dns-name: ${{ secrets.WEB_SERVER_DNS_NAME }}
+        env:
+          # Core secrets (automatically populated by validate-secrets action)
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          KAMAL_REGISTRY_USERNAME: ${{ secrets.KAMAL_REGISTRY_USERNAME }}
+          KAMAL_REGISTRY_PASSWORD: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          WEB_SERVER_DNS_NAME: ${{ secrets.WEB_SERVER_DNS_NAME }}
           
           # Rails API Integration
-          rails-master-key: ${{ secrets.RAILS_MASTER_KEY }}
-          rails-default-public-app-host: ${{ secrets.RAILS_DEFAULT_PUBLIC_APP_HOST }}
-          rails-default-public-app-host-protocol: ${{ secrets.RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL }}
+          RAILS_MASTER_KEY: ${{ secrets.RAILS_MASTER_KEY }}
+          RAILS_DEFAULT_PUBLIC_APP_HOST: ${{ secrets.RAILS_DEFAULT_PUBLIC_APP_HOST }}
+          RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL: ${{ secrets.RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL }}
           
           # Frontend Configuration
-          frontend-app-name: ${{ secrets.FRONTEND_APP_NAME }}
-          auth-origin: ${{ secrets.AUTH_ORIGIN }}
-          nuxt-public-rails-api-server: ${{ secrets.NUXT_PUBLIC_RAILS_API_SERVER }}
+          FRONTEND_APP_NAME: ${{ secrets.FRONTEND_APP_NAME }}
+          AUTH_ORIGIN: ${{ secrets.AUTH_ORIGIN }}
+          NUXT_PUBLIC_RAILS_API_SERVER: ${{ secrets.NUXT_PUBLIC_RAILS_API_SERVER }}
           
           # Azure AD & WCMC User Management
-          azure-ad-client-id: ${{ secrets.NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID }}
-          azure-ad-client-secret: ${{ secrets.NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_SECRET }}
-          azure-ad-tenant-id: ${{ secrets.NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_TENANT_ID }}
-          wcmc-user-management-secret: ${{ secrets.NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET }}
-          wcmc-user-management-rails-api-server: ${{ secrets.NUXT_PUBLIC_WCMC_MODULES_WCMC_USER_MANAGEMENT_RAILS_API_SERVER }}
+          NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID: ${{ secrets.NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID }}
+          NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_SECRET: ${{ secrets.NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_SECRET }}
+          NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_TENANT_ID: ${{ secrets.NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_TENANT_ID }}
+          NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET: ${{ secrets.NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET }}
+          NUXT_PUBLIC_WCMC_MODULES_WCMC_USER_MANAGEMENT_RAILS_API_SERVER: ${{ secrets.NUXT_PUBLIC_WCMC_MODULES_WCMC_USER_MANAGEMENT_RAILS_API_SERVER }}
 ```
 
 ## 🔧 Environment Variables Automatically Created
@@ -403,6 +407,28 @@ graph TD
 | **Frontend (Nuxt)** | ✅ Complete | ✅ Complete |
 
 ## 🎉 **Latest Updates**
+
+### 🐛 **Critical Bug Fixes (v1 Update)**
+
+We've resolved several critical issues that were affecting deployments:
+
+**🔧 Environment Variable Validation Bug Fixed:**
+- **Issue**: Actions were incorrectly reading input parameters instead of environment variables during validation
+- **Fixed Actions**: `nuxt-kamal-v2-setup`, `nuxt-kamal-v2-deploy`, `nuxt-kamal-v1-setup`, `nuxt-kamal-v1-deploy`
+- **Impact**: Validation now properly checks environment variables set by GitHub secrets
+- **Status**: ✅ All actions now correctly validate required environment variables
+
+**📢 Slack Notification System Improved:**
+- **Self-Contained Templates**: Slack templates are now embedded within the `slack-notify` action
+- **Dynamic Action Types**: Notifications now correctly show "Setup", "Deploy", etc. based on the actual action
+- **Better Error Handling**: Empty environment variables no longer cause JSON parsing errors
+- **Template Fixes**: All notification types (started, success, failure) now work consistently
+
+**🔑 SSH Key Access Fixed:**
+- **Issue**: Actions were trying to access `${{ inputs.ssh-private-key }}` but workflows provide environment variables
+- **Solution**: Updated all actions to use `${{ env.SSH_PRIVATE_KEY }}` and `${{ env.WEB_SERVER_DNS_NAME }}`
+- **Affected Actions**: All Kamal deployment actions
+- **Status**: ✅ SSH authentication now works correctly
 
 ### ✨ **Complete Kamal v2 Frontend Support Added**
 
