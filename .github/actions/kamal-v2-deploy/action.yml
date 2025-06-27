@@ -197,7 +197,7 @@ runs:
     - name: Set up SSH
       uses: webfactory/ssh-agent@v0.9.0
       with:
-        ssh-private-key: ${{ inputs.SSH_PRIVATE_KEY }}
+        ssh-private-key: ${{ env.SSH_PRIVATE_KEY }}
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -232,13 +232,13 @@ runs:
 
         # Base secrets
         cat <<EOF > "$secrets_file"
-        KAMAL_REGISTRY_USERNAME=${{ inputs.KAMAL_REGISTRY_USERNAME }}
-        KAMAL_REGISTRY_PASSWORD=${{ inputs.KAMAL_REGISTRY_PASSWORD }}
-        RAILS_MASTER_KEY=${{ inputs.RAILS_MASTER_KEY }}
-        ${{ inputs.database-env-prefix }}_DATABASE_HOSTNAME=${{ inputs.DATABASE_HOST }}
-        ${{ inputs.database-env-prefix }}_DATABASE_NAME=${{ inputs.DATABASE_NAME }}
-        ${{ inputs.database-env-prefix }}_DATABASE_USERNAME=${{ inputs.DATABASE_USERNAME }}
-        ${{ inputs.database-env-prefix }}_DATABASE_PASSWORD=${{ inputs.DATABASE_PASSWORD }}
+        KAMAL_REGISTRY_USERNAME=${KAMAL_REGISTRY_USERNAME}
+        KAMAL_REGISTRY_PASSWORD=${KAMAL_REGISTRY_PASSWORD}
+        RAILS_MASTER_KEY=${RAILS_MASTER_KEY}
+        ${{ inputs.database-env-prefix }}_DATABASE_HOSTNAME=${DATABASE_HOST}
+        ${{ inputs.database-env-prefix }}_DATABASE_NAME=${DATABASE_NAME}
+        ${{ inputs.database-env-prefix }}_DATABASE_USERNAME=${DATABASE_USERNAME}
+        ${{ inputs.database-env-prefix }}_DATABASE_PASSWORD=${DATABASE_PASSWORD}
         ${{ inputs.database-env-prefix }}_DATABASE_PORT=${{ inputs.database-port }}
         EOF
 
