@@ -235,7 +235,7 @@ runs:
         DATABASE_NAME=${DATABASE_NAME}
         DATABASE_USERNAME=${DATABASE_USERNAME}
         DATABASE_PASSWORD=${DATABASE_PASSWORD}
-        DATABASE_PORT=${DATABASE_PORT}
+        DATABASE_PORT=${DATABASE_PORT:-${{ inputs.database-port }}}
         EOF
 
         # Add Rails host configuration if available

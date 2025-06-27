@@ -218,7 +218,7 @@ RAILS_MASTER_KEY               # Rails master key
 
 ### 💾 **Required if Using Database**
 ```
-DATABASE_HOSTNAME              # Database hostname
+DATABASE_HOST                   # Database hostname
 DATABASE_NAME                  # Database name
 DATABASE_USERNAME              # Database username
 DATABASE_PASSWORD              # Database password
