@@ -60,15 +60,17 @@ runs:
     - name: Populate environment variables
       shell: bash
       run: |
-        # Source the secrets file to populate environment variables
-        set -a
-        source "${{ inputs.secrets-file }}"
-        set +a
+        # Instead of sourcing the template file, we'll export the existing environment variables
+        # The secrets are already available as environment variables from the workflow
         
-        # Export all variables to GitHub environment
+        echo "✅ All required secrets are validated and available as environment variables"
+        echo "The following variables have been validated:"
+        
         while IFS= read -r var; do
           if [ -z "$var" ]; then
             continue
           fi
-          echo "${var}=${!var}" >> $GITHUB_ENV
+          if [ -n "${!var}" ]; then
+            echo "  ✅ $var is set"
+          fi
         done <<< "${{ steps.extract-vars.outputs.required_vars }}" 
