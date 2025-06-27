@@ -227,18 +227,28 @@ runs:
         if [[ -f ".kamal/secrets-common" ]]; then
           cp .kamal/secrets-common .kamal/secrets.${{ inputs.environment }}
           
-          # Replace environment variable references with actual values
+          # Replace environment variable references with actual values (safer approach)
+          temp_file=$(mktemp)
           while IFS= read -r line; do
             if [[ $line =~ ^([^#=]+)=\$([^=]+)$ ]]; then
               var_name="${BASH_REMATCH[1]}"
               env_var="${BASH_REMATCH[2]}"
               if [[ -n "${!env_var}" ]]; then
-                sed -i "s|${var_name}=\$${env_var}|${var_name}=${!env_var}|g" .kamal/secrets.${{ inputs.environment }}
+                # Direct substitution without sed to avoid special character issues
+                echo "${var_name}=${!env_var}" >> "$temp_file"
+                echo "  ✅ ${var_name} = ${env_var}"
               else
                 echo "⚠️  Warning: Environment variable ${env_var} is not set"
+                echo "$line" >> "$temp_file"
               fi
+            else
+              # Keep comments and other lines as-is
+              echo "$line" >> "$temp_file"
             fi
           done < .kamal/secrets-common
+          
+          # Replace the original file
+          mv "$temp_file" .kamal/secrets.${{ inputs.environment }}
           
           # Handle DATABASE_PORT with fallback to default
           if grep -q "DATABASE_PORT=" .kamal/secrets.${{ inputs.environment }}; then
@@ -251,12 +261,6 @@ runs:
           # Secure the secrets file
           chmod 600 .kamal/secrets.${{ inputs.environment }}
           echo "✅ Kamal secrets file created successfully from template"
-          
-          # Debug: Show what variables were populated (without showing values)
-          echo "📋 Populated environment variables:"
-          grep -v '^#' .kamal/secrets.${{ inputs.environment }} | cut -d'=' -f1 | while read var; do
-            echo "  ✅ ${var}"
-          done
         else
           echo "❌ Error: .kamal/secrets-common template not found"
           echo "Please ensure the secrets template exists in your project"
