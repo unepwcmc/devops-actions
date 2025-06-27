@@ -14,6 +14,7 @@ The following environment variables must be set in your GitHub repository secret
 - `DATABASE_NAME` - Database name
 - `DATABASE_USERNAME` - Database username
 - `DATABASE_PASSWORD` - Database password
+- `DATABASE_PORT` - Database port
 
 ## Optional Environment Variables
 
