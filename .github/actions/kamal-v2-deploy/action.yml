@@ -239,7 +239,7 @@ runs:
         ${{ inputs.database-env-prefix }}_DATABASE_NAME=${DATABASE_NAME}
         ${{ inputs.database-env-prefix }}_DATABASE_USERNAME=${DATABASE_USERNAME}
         ${{ inputs.database-env-prefix }}_DATABASE_PASSWORD=${DATABASE_PASSWORD}
-        ${{ inputs.database-env-prefix }}_DATABASE_PORT=${{ inputs.database-port }}
+        ${{ inputs.database-env-prefix }}_DATABASE_PORT=${DATABASE_PORT}
         EOF
 
         # Add Rails host configuration if available
