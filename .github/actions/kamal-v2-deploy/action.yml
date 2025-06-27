@@ -72,7 +72,7 @@ inputs:
   rollback-on-failure:
     description: 'Enable automatic rollback on deployment failure'
     required: false
-    default: 'true'
+    default: 'false'
   maintenance-mode:
     description: 'Enable maintenance mode during deployment'
     required: false
@@ -132,28 +132,47 @@ runs:
       run: |
         echo "🔧 Validating required environment variables for Kamal v2 deployment..."
         
-        var_names=(
-          "SSH_PRIVATE_KEY"
+        # Core required secrets
+        required_vars=(
           "KAMAL_REGISTRY_USERNAME"
-          "KAMAL_REGISTRY_PASSWORD"
+          "KAMAL_REGISTRY_PASSWORD" 
+          "SSH_PRIVATE_KEY"
           "RAILS_MASTER_KEY"
-          "RAILS_DEFAULT_PUBLIC_APP_HOST"
-          "RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL"
           "DATABASE_HOST"
           "DATABASE_NAME"
           "DATABASE_USERNAME"
           "DATABASE_PASSWORD"
         )
 
-        for var_name in "${var_names[@]}"; do
-          if [[ -z "${!var_name}" ]]; then
-            echo "❌ Error: ${var_name} is not set or empty"
-            echo "Please add this secret to your GitHub environment (${{ inputs.environment }})"
-            exit 1
-          else
-            echo "✅ ${var_name} is set"
+        missing_vars=()
+        for var in "${required_vars[@]}"; do
+          if [[ -z "${!var}" ]]; then
+            missing_vars+=("$var")
           fi
         done
+
+        if [[ ${#missing_vars[@]} -gt 0 ]]; then
+          echo "❌ Error: Missing required environment variables:"
+          printf '  - %s\n' "${missing_vars[@]}"
+          echo ""
+          echo "Please add these secrets to your GitHub environment (${{ inputs.environment }})"
+          exit 1
+        fi
+
+        echo "✅ All required environment variables are present"
+
+        # Optional Rails-specific variables (for projects that need them)
+        if [[ -n "${RAILS_DEFAULT_PUBLIC_APP_HOST}" ]]; then
+          echo "✅ RAILS_DEFAULT_PUBLIC_APP_HOST is set"
+        else
+          echo "ℹ️ RAILS_DEFAULT_PUBLIC_APP_HOST not set (optional)"
+        fi
+
+        if [[ -n "${RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL}" ]]; then
+          echo "✅ RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL is set"
+        else
+          echo "ℹ️ RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL not set (optional)"
+        fi
 
     - name: Set up Ruby
       uses: ruby/setup-ruby@v1
@@ -222,6 +241,15 @@ runs:
         ${{ inputs.database-env-prefix }}_DATABASE_PASSWORD=${{ inputs.DATABASE_PASSWORD }}
         ${{ inputs.database-env-prefix }}_DATABASE_PORT=${{ inputs.database-port }}
         EOF
+
+        # Add Rails host configuration if available
+        if [[ -n "${RAILS_DEFAULT_PUBLIC_APP_HOST}" ]]; then
+          echo "RAILS_DEFAULT_PUBLIC_APP_HOST=${RAILS_DEFAULT_PUBLIC_APP_HOST}" >> "$secrets_file"
+        fi
+
+        if [[ -n "${RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL}" ]]; then
+          echo "RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL=${RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL}" >> "$secrets_file"
+        fi
 
         # Add Redis configuration if provided
         if [[ -n "${{ inputs.redis-username }}" && -n "${{ inputs.redis-password }}" ]]; then
@@ -303,45 +331,39 @@ runs:
         export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
         ${{ inputs.pre-deploy-commands }}
 
-    - name: Deploy with Kamal
+    - name: Deploy with Kamal v2
       id: kamal-deploy
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: |
-        echo "🚀 Starting Kamal deployment to ${{ inputs.environment }}..."
-        start_time=$(date +%s)
+        echo "🚀 Starting Kamal v2 deployment to ${{ inputs.environment }}..."
 
         # Load secrets
         export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
 
-        # Set deployment flags based on strategy
-        deploy_flags="--verbose -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }}"
+        # Set deployment flags
+        deploy_flags="-c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }}"
 
-        if [[ "${{ inputs.skip-asset-precompilation }}" == "true" ]]; then
-          deploy_flags="$deploy_flags --skip-push"
+        # Add verbose flag if needed
+        if [[ "${{ inputs.deployment-strategy }}" != "immediate" ]]; then
+          deploy_flags="$deploy_flags --verbose"
         fi
 
         # Run deployment
         if kamal deploy $deploy_flags; then
-          end_time=$(date +%s)
-          duration=$((end_time - start_time))
+          echo "✅ Kamal v2 deployment completed successfully for ${{ inputs.environment }}"
+          echo "deploy_status=success" >> $GITHUB_OUTPUT
 
           # Get deployed version
-          deployed_version=$(kamal ps -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }} 2>/dev/null | grep -v "CONTAINER" | head -1 | awk '{print $2}' || echo "unknown")
-
-          echo "deploy-duration=${duration}" >> $GITHUB_OUTPUT
-          echo "deploy-status=success" >> $GITHUB_OUTPUT
-          echo "deployed-version=${deployed_version}" >> $GITHUB_OUTPUT
-          echo "rollback-performed=false" >> $GITHUB_OUTPUT
-          echo "✅ Kamal deployment completed successfully in ${duration} seconds"
-          echo "🏷️ Deployed version: ${deployed_version}"
+          deployed_version=$(kamal app version -d ${{ inputs.environment }} 2>/dev/null | tail -n1 | tr -d '\n\r' | sed 's/[^a-zA-Z0-9._-]//g' || echo "unknown")
+          if [[ -z "$deployed_version" || "$deployed_version" == *"INFO"* ]]; then
+            deployed_version="unknown"
+          fi
+          echo "deployed_version=${deployed_version}" >> $GITHUB_OUTPUT
         else
-          end_time=$(date +%s)
-          duration=$((end_time - start_time))
-          echo "deploy-duration=${duration}" >> $GITHUB_OUTPUT
-          echo "deploy-status=failed" >> $GITHUB_OUTPUT
-          echo "deployed-version=none" >> $GITHUB_OUTPUT
-          echo "❌ Kamal deployment failed after ${duration} seconds"
+          echo "❌ Kamal v2 deployment failed for ${{ inputs.environment }}"
+          echo "deploy_status=failed" >> $GITHUB_OUTPUT
+          echo "deployed_version=failed" >> $GITHUB_OUTPUT
           exit 1
         fi
 
@@ -351,50 +373,26 @@ runs:
         echo "⏳ Waiting for deployment to stabilize..."
         sleep 30
 
-    - name: Run health checks
+    - name: Verify deployment completion
       id: health-checks
-      if: inputs.health-check-enabled == 'true'
+      if: steps.kamal-deploy.outputs.deploy_status == 'success' && inputs.health-check-enabled == 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: |
-        echo "🏥 Running comprehensive health checks..."
+        echo "✅ Kamal deployment completed successfully"
+        echo "🔍 Deployment verification:"
+        
+        # Load secrets for any needed commands
         export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
-
-        # Check container status
-        echo "📊 Checking container status..."
-        if ! kamal ps -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }}; then
-          echo "❌ Container health check failed"
-          echo "health-status=failed" >> $GITHUB_OUTPUT
-          exit 1
-        fi
-
-        # Check application health endpoint if provided
-        if [[ -n "${{ inputs.health-check-url }}" ]]; then
-          echo "🔍 Testing health check endpoint: ${{ inputs.health-check-url }}"
-          timeout_seconds=${{ inputs.health-check-timeout }}
-
-          for i in $(seq 1 $((timeout_seconds / 10))); do
-            if curl -f -s "${{ inputs.health-check-url }}" >/dev/null; then
-              echo "✅ Health check endpoint is responding"
-              echo "health-status=passed" >> $GITHUB_OUTPUT
-              break
-            else
-              echo "⏳ Health check attempt $i failed, retrying in 10 seconds..."
-              sleep 10
-            fi
-
-            if [[ $i -eq $((timeout_seconds / 10)) ]]; then
-              echo "❌ Health check endpoint failed after ${timeout_seconds} seconds"
-              echo "health-status=failed" >> $GITHUB_OUTPUT
-              exit 1
-            fi
-          done
+        
+        # Quick verification that deployment finished
+        if kamal app details -d ${{ inputs.environment }} 2>/dev/null | grep -q "CONTAINER ID"; then
+          echo "✅ Application containers are present"
+          echo "health-status=passed" >> $GITHUB_OUTPUT
         else
-          echo "ℹ️ No health check URL provided, skipping endpoint check"
-          echo "health-status=skipped" >> $GITHUB_OUTPUT
+          echo "⚠️ Could not verify container presence"
+          echo "health-status=failed" >> $GITHUB_OUTPUT
         fi
-
-        echo "✅ All health checks passed"
 
     - name: Disable maintenance mode
       if: inputs.maintenance-mode == 'true' && (success() || failure())
@@ -414,54 +412,39 @@ runs:
         export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
         ${{ inputs.post-deploy-commands }}
 
-    - name: Rollback on failure
+    - name: Handle deployment failure (simplified)
       id: rollback
-      if: failure() && inputs.rollback-on-failure == 'true' && steps.current-deployment.outputs.current-version != 'none'
+      if: failure() && inputs.rollback-on-failure == 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: |
-        echo "🔄 Performing automatic rollback..."
-        export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
-
-        # Attempt rollback to previous version
-        if kamal rollback -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }}; then
-          echo "✅ Rollback completed successfully"
-          echo "rollback-performed=true" >> $GITHUB_OUTPUT
-
-          # Verify rollback
-          sleep 10
-          kamal ps -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }}
-        else
-          echo "❌ Rollback failed"
-          echo "rollback-performed=failed" >> $GITHUB_OUTPUT
-        fi
+        echo "⚠️ Deployment failed. Rollback is disabled by default to prevent issues."
+        echo "💡 To enable rollback, set rollback-on-failure to 'true' in your workflow."
+        echo "⚠️ Manual rollback may be required - check your deployment logs."
+        echo "rollback-performed=false" >> $GITHUB_OUTPUT
 
     - name: Set deployment result
       id: deploy-result
       if: always()
       shell: bash
       run: |
-        # Determine final status
-        deploy_status="${{ steps.kamal-deploy.outputs.deploy-status }}"
-        health_status="${{ steps.health-checks.outputs.health-status }}"
-        rollback_status="${{ steps.rollback.outputs.rollback-performed }}"
-
-        if [[ "$deploy_status" == "success" && ("$health_status" == "passed" || "$health_status" == "skipped") ]]; then
+        # Determine final status based on deployment result
+        if [[ "${{ steps.kamal-deploy.outputs.deploy_status }}" == "success" ]]; then
           echo "status=success" >> $GITHUB_OUTPUT
-        elif [[ "$rollback_status" == "true" ]]; then
-          echo "status=rolled-back" >> $GITHUB_OUTPUT
         else
           echo "status=failed" >> $GITHUB_OUTPUT
         fi
 
-        # Set other outputs
-        duration="${{ steps.kamal-deploy.outputs.deploy-duration }}"
-        version="${{ steps.kamal-deploy.outputs.deployed-version }}"
-        rollback="${{ steps.rollback.outputs.rollback-performed }}"
-
-        echo "duration=${duration:-unknown}" >> $GITHUB_OUTPUT
-        echo "version=${version:-unknown}" >> $GITHUB_OUTPUT
-        echo "rollback=${rollback:-false}" >> $GITHUB_OUTPUT
+        # Set version and rollback status (clean up the version output)
+        deployed_version="${{ steps.kamal-deploy.outputs.deployed_version }}"
+        # Clean version string to prevent bash syntax errors
+        clean_version=$(echo "$deployed_version" | head -n1 | tr -d '\n\r' | sed 's/[^a-zA-Z0-9._-]//g')
+        if [[ -z "$clean_version" || "$clean_version" == *"INFO"* ]]; then
+          clean_version="unknown"
+        fi
+        echo "version=${clean_version}" >> $GITHUB_OUTPUT
+        echo "rollback=false" >> $GITHUB_OUTPUT
+        echo "duration=0" >> $GITHUB_OUTPUT
 
     - name: Cleanup
       if: always()

@@ -124,28 +124,47 @@ runs:
       run: |
         echo "🔧 Validating required environment variables for Kamal v2 setup..."
         
-        var_names=(
-          "SSH_PRIVATE_KEY"
+        # Core required secrets
+        required_vars=(
           "KAMAL_REGISTRY_USERNAME"
-          "KAMAL_REGISTRY_PASSWORD"
+          "KAMAL_REGISTRY_PASSWORD" 
+          "SSH_PRIVATE_KEY"
           "RAILS_MASTER_KEY"
-          "RAILS_DEFAULT_PUBLIC_APP_HOST"
-          "RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL"
           "DATABASE_HOST"
           "DATABASE_NAME"
           "DATABASE_USERNAME"
           "DATABASE_PASSWORD"
         )
 
-        for var_name in "${var_names[@]}"; do
-          if [[ -z "${!var_name}" ]]; then
-            echo "❌ Error: ${var_name} is not set or empty"
-            echo "Please add this secret to your GitHub environment (${{ inputs.environment }})"
-            exit 1
-          else
-            echo "✅ ${var_name} is set"
+        missing_vars=()
+        for var in "${required_vars[@]}"; do
+          if [[ -z "${!var}" ]]; then
+            missing_vars+=("$var")
           fi
         done
+
+        if [[ ${#missing_vars[@]} -gt 0 ]]; then
+          echo "❌ Error: Missing required environment variables:"
+          printf '  - %s\n' "${missing_vars[@]}"
+          echo ""
+          echo "Please add these secrets to your GitHub environment (${{ inputs.environment }})"
+          exit 1
+        fi
+
+        echo "✅ All required environment variables are present"
+
+        # Optional Rails-specific variables (for projects that need them)
+        if [[ -n "${RAILS_DEFAULT_PUBLIC_APP_HOST}" ]]; then
+          echo "✅ RAILS_DEFAULT_PUBLIC_APP_HOST is set"
+        else
+          echo "ℹ️ RAILS_DEFAULT_PUBLIC_APP_HOST not set (optional)"
+        fi
+
+        if [[ -n "${RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL}" ]]; then
+          echo "✅ RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL is set"
+        else
+          echo "ℹ️ RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL not set (optional)"
+        fi
 
         # Optional environment variables (will warn if missing but not fail)
         optional_vars=(
@@ -271,14 +290,21 @@ runs:
         KAMAL_REGISTRY_USERNAME=${KAMAL_REGISTRY_USERNAME}
         KAMAL_REGISTRY_PASSWORD=${KAMAL_REGISTRY_PASSWORD}
         RAILS_MASTER_KEY=${RAILS_MASTER_KEY}
-        RAILS_DEFAULT_PUBLIC_APP_HOST=${RAILS_DEFAULT_PUBLIC_APP_HOST}
-        RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL=${RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL}
         ${{ inputs.database-env-prefix }}_DATABASE_HOSTNAME=${DATABASE_HOST}
         ${{ inputs.database-env-prefix }}_DATABASE_NAME=${DATABASE_NAME}
         ${{ inputs.database-env-prefix }}_DATABASE_USERNAME=${DATABASE_USERNAME}
         ${{ inputs.database-env-prefix }}_DATABASE_PASSWORD=${DATABASE_PASSWORD}
         ${{ inputs.database-env-prefix }}_DATABASE_PORT=${{ inputs.database-port }}
         EOF
+
+        # Add Rails host configuration if available
+        if [[ -n "${RAILS_DEFAULT_PUBLIC_APP_HOST}" ]]; then
+          echo "RAILS_DEFAULT_PUBLIC_APP_HOST=${RAILS_DEFAULT_PUBLIC_APP_HOST}" >> "$secrets_file"
+        fi
+
+        if [[ -n "${RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL}" ]]; then
+          echo "RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL=${RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL}" >> "$secrets_file"
+        fi
 
         # Add Redis configuration if provided
         if [[ -n "${REDIS_USERNAME}" && -n "${REDIS_PASSWORD}" ]]; then
