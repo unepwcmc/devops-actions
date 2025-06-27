@@ -233,6 +233,13 @@ runs:
             if [[ $line =~ ^([^#=]+)=\$([^=]+)$ ]]; then
               var_name="${BASH_REMATCH[1]}"
               env_var="${BASH_REMATCH[2]}"
+              
+              # Skip SSH_PRIVATE_KEY - it should not be in application secrets file
+              if [[ "$var_name" == "SSH_PRIVATE_KEY" ]]; then
+                echo "ℹ️  Skipping SSH_PRIVATE_KEY (handled separately for SSH authentication)"
+                continue
+              fi
+              
               if [[ -n "${!env_var}" ]]; then
                 # Direct substitution without sed to avoid special character issues
                 echo "${var_name}=${!env_var}" >> "$temp_file"
