@@ -273,96 +273,50 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: |
-        echo "🔐 Creating Kamal secrets file..."
+        echo "📝 Creating Kamal secrets file from environment variables..."
+        
+        # Ensure .kamal directory exists
         mkdir -p .kamal
-        secrets_file=".kamal/secrets.${{ inputs.environment }}"
-
-        # Create secrets file with proper permissions
-        touch "$secrets_file"
-        chmod 600 "$secrets_file"
-
-        # Base secrets
-        cat <<EOF > "$secrets_file"
-        KAMAL_REGISTRY_USERNAME=${KAMAL_REGISTRY_USERNAME}
-        KAMAL_REGISTRY_PASSWORD=${KAMAL_REGISTRY_PASSWORD}
-        RAILS_MASTER_KEY=${RAILS_MASTER_KEY}
-        DATABASE_HOST=${DATABASE_HOST}
-        DATABASE_NAME=${DATABASE_NAME}
-        DATABASE_USERNAME=${DATABASE_USERNAME}
-        DATABASE_PASSWORD=${DATABASE_PASSWORD}
-        DATABASE_PORT=${DATABASE_PORT:-${{ inputs.database-port }}}
-        EOF
-
-        # Add Rails host configuration if available
-        if [[ -n "${RAILS_DEFAULT_PUBLIC_APP_HOST}" ]]; then
-          echo "RAILS_DEFAULT_PUBLIC_APP_HOST=${RAILS_DEFAULT_PUBLIC_APP_HOST}" >> "$secrets_file"
+        
+        # Create secrets file from environment variables (same approach as working Nuxt action)
+        if [[ -f ".kamal/secrets-common" ]]; then
+          cp .kamal/secrets-common .kamal/secrets.${{ inputs.environment }}
+          
+          # Replace environment variable references with actual values
+          while IFS= read -r line; do
+            if [[ $line =~ ^([^#=]+)=\$([^=]+)$ ]]; then
+              var_name="${BASH_REMATCH[1]}"
+              env_var="${BASH_REMATCH[2]}"
+              if [[ -n "${!env_var}" ]]; then
+                sed -i "s|${var_name}=\$${env_var}|${var_name}=${!env_var}|g" .kamal/secrets.${{ inputs.environment }}
+              else
+                echo "⚠️  Warning: Environment variable ${env_var} is not set"
+              fi
+            fi
+          done < .kamal/secrets-common
+          
+          # Handle DATABASE_PORT with fallback to default
+          if grep -q "DATABASE_PORT=" .kamal/secrets.${{ inputs.environment }}; then
+            if [[ -z "${DATABASE_PORT}" ]]; then
+              sed -i "s|DATABASE_PORT=|DATABASE_PORT=${{ inputs.database-port }}|g" .kamal/secrets.${{ inputs.environment }}
+              echo "✅ Using default DATABASE_PORT: ${{ inputs.database-port }}"
+            fi
+          fi
+          
+          # Secure the secrets file
+          chmod 600 .kamal/secrets.${{ inputs.environment }}
+          echo "✅ Kamal secrets file created successfully from template"
+          
+          # Debug: Show what variables were populated (without showing values)
+          echo "📋 Populated environment variables:"
+          grep -v '^#' .kamal/secrets.${{ inputs.environment }} | cut -d'=' -f1 | while read var; do
+            echo "  ✅ ${var}"
+          done
+        else
+          echo "❌ Error: .kamal/secrets-common template not found"
+          echo "Please ensure the secrets template exists in your project"
+          exit 1
         fi
-
-        if [[ -n "${RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL}" ]]; then
-          echo "RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL=${RAILS_DEFAULT_PUBLIC_APP_HOST_PROTOCOL}" >> "$secrets_file"
-        fi
-
-        # Add Redis configuration if provided
-        if [[ -n "${REDIS_USERNAME}" && -n "${REDIS_PASSWORD}" ]]; then
-          echo "REDIS_USERNAME=${REDIS_USERNAME}" >> "$secrets_file"
-          echo "REDIS_PASSWORD=${REDIS_PASSWORD}" >> "$secrets_file"
-          echo "SIDEKIQ_REDIS_URL=redis://${REDIS_USERNAME}:${REDIS_PASSWORD}@${{ inputs.redis-host }}:${{ inputs.redis-port }}/${{ inputs.redis-database }}" >> "$secrets_file"
-          echo "✅ Added Redis configuration with Sidekiq URL"
-        fi
-
-        # Add Mail configuration if provided
-        if [[ -n "${MAIL_USERNAME}" && -n "${MAIL_PASSWORD}" ]]; then
-          echo "MAIL_USERNAME=${MAIL_USERNAME}" >> "$secrets_file"
-          echo "MAIL_PASSWORD=${MAIL_PASSWORD}" >> "$secrets_file"
-          echo "✅ Added Mail server configuration"
-        fi
-
-        # Add AWS general secrets if provided
-        if [[ -n "${AWS_ACCESS_KEY_ID}" ]]; then
-          echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> "$secrets_file"
-          echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}" >> "$secrets_file"
-          echo "AWS_REGION=${AWS_REGION}" >> "$secrets_file"
-          echo "✅ Added AWS general configuration"
-        fi
-
-        # Add AWS S3 specific secrets if provided
-        if [[ -n "${AWS_S3_ACCESS_KEY_ID}" ]]; then
-          echo "AWS_S3_ACCESS_KEY_ID=${AWS_S3_ACCESS_KEY_ID}" >> "$secrets_file"
-          echo "AWS_S3_SECRET_ACCESS_KEY=${AWS_S3_SECRET_ACCESS_KEY}" >> "$secrets_file"
-          echo "AWS_S3_REGION=${AWS_S3_REGION}" >> "$secrets_file"
-          echo "AWS_S3_NAME=${AWS_S3_BUCKET_NAME}" >> "$secrets_file"
-          echo "✅ Added AWS S3 configuration"
-        fi
-
-        # Add Frontend Integration if provided
-        if [[ -n "${FRONTEND_APP_NAME}" ]]; then
-          echo "FRONTEND_APP_NAME=${FRONTEND_APP_NAME}" >> "$secrets_file"
-          echo "✅ Added Frontend integration configuration"
-        fi
-
-        # Add Azure AD configuration if provided
-        if [[ -n "${NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID}" ]]; then
-          echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID=${NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID}" >> "$secrets_file"
-          echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_SECRET=${NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_SECRET}" >> "$secrets_file"
-          echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_TENANT_ID=${NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_TENANT_ID}" >> "$secrets_file"
-          echo "✅ Added Azure AD configuration for WCMC User Management"
-        fi
-
-        # Add WCMC User Management configuration if provided
-        if [[ -n "${NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET}" ]]; then
-          echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET=${NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET}" >> "$secrets_file"
-          echo "✅ Added WCMC User Management configuration"
-        fi
-
-        # Add additional secrets if provided
-        if [[ -n "${{ inputs.additional-secrets }}" ]]; then
-          echo "" >> "$secrets_file"
-          echo "# Additional project-specific secrets" >> "$secrets_file"
-          echo "${{ inputs.additional-secrets }}" >> "$secrets_file"
-          echo "✅ Added additional project-specific secrets"
-        fi
-
-        echo "✅ Secrets file created with $(wc -l < "$secrets_file") entries"
 
     - name: Run pre-setup commands
       if: inputs.pre-setup-commands != ''
