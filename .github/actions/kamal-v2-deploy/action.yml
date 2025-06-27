@@ -252,16 +252,31 @@ runs:
         fi
 
         # Add Redis configuration if provided
-        if [[ -n "${{ inputs.redis-username }}" && -n "${{ inputs.redis-password }}" ]]; then
-          echo "REDIS_USERNAME=${{ inputs.redis-username }}" >> "$secrets_file"
-          echo "REDIS_PASSWORD=${{ inputs.redis-password }}" >> "$secrets_file"
-          echo "SIDEKIQ_REDIS_URL=redis://${{ inputs.redis-username }}:${{ inputs.redis-password }}@${{ inputs.redis-host }}:${{ inputs.redis-port }}/${{ inputs.redis-database }}" >> "$secrets_file"
+        if [[ -n "${REDIS_USERNAME}" && -n "${REDIS_PASSWORD}" ]]; then
+          echo "REDIS_USERNAME=${REDIS_USERNAME}" >> "$secrets_file"
+          echo "REDIS_PASSWORD=${REDIS_PASSWORD}" >> "$secrets_file"
+          echo "SIDEKIQ_REDIS_URL=redis://${REDIS_USERNAME}:${REDIS_PASSWORD}@${{ inputs.redis-host }}:${{ inputs.redis-port }}/${{ inputs.redis-database }}" >> "$secrets_file"
           echo "✅ Added Redis configuration with Sidekiq URL"
         fi
 
+        # Add Mail configuration if provided
+        if [[ -n "${MAIL_USERNAME}" && -n "${MAIL_PASSWORD}" ]]; then
+          echo "MAIL_USERNAME=${MAIL_USERNAME}" >> "$secrets_file"
+          echo "MAIL_PASSWORD=${MAIL_PASSWORD}" >> "$secrets_file"
+          echo "✅ Added Mail server configuration"
+        fi
+
+        # Add AWS general secrets if provided
+        if [[ -n "${AWS_ACCESS_KEY_ID}" ]]; then
+          echo "AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}" >> "$secrets_file"
+          echo "AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}" >> "$secrets_file"
+          echo "AWS_REGION=${AWS_REGION}" >> "$secrets_file"
+          echo "✅ Added AWS general configuration"
+        fi
+
         # Add Frontend Integration if provided
-        if [[ -n "${{ inputs.frontend-app-name }}" ]]; then
-          echo "FRONTEND_APP_NAME=${{ inputs.frontend-app-name }}" >> "$secrets_file"
+        if [[ -n "${FRONTEND_APP_NAME}" ]]; then
+          echo "FRONTEND_APP_NAME=${FRONTEND_APP_NAME}" >> "$secrets_file"
           echo "✅ Added Frontend integration configuration"
         fi
 
