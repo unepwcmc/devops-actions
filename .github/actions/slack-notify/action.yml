@@ -138,21 +138,19 @@ runs:
     - name: Sanitize values for JSON
       shell: bash
       run: |
-        # Escape JSON-unsafe characters (backslashes, quotes, newlines, tabs, CR)
-        sanitize() {
+        # Use jq to JSON-escape values, then strip the surrounding quotes so they can be embedded in templates
+        escape_for_template() {
           local value="$1"
-          value="${value//\\/\\\\}"   # backslash -> \\
-          value="${value//\"/\\\"}"   # double-quote -> \"
-          value="${value//$'\n'/\\n}"   # newline -> \n
-          value="${value//$'\r'/}"       # carriage return -> removed
-          value="${value//$'\t'/\\t}"   # tab -> \t
-          printf '%s' "$value"
+          local escaped
+          escaped=$(printf '%s' "$value" | jq -Rsa .)
+          # Remove leading and trailing quotes from jq output
+          echo "${escaped:1:${#escaped}-2}"
         }
 
-        escaped_commit_message=$(sanitize "${{ inputs.commit-message }}")
+        escaped_commit_message=$(escape_for_template "${{ inputs.commit-message }}")
         echo "COMMIT_MESSAGE=${escaped_commit_message}" >> $GITHUB_ENV
 
-        escaped_failure_reason=$(sanitize "${FAILURE_REASON}")
+        escaped_failure_reason=$(escape_for_template "${FAILURE_REASON}")
         echo "FAILURE_REASON=${escaped_failure_reason}" >> $GITHUB_ENV
 
     - name: Set notification template
