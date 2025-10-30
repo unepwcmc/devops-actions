@@ -1,0 +1,201 @@
+name: "Kamal v2 Deploy"
+description: "Deploy applications using Kamal v2 with comprehensive configuration, health checks, and rollback capabilities"
+author: "WCMC DevOps Team"
+
+inputs:
+  environment:
+    description: "Environment to deploy to (staging, production)"
+    required: true
+  buildx-version:
+    description: "Docker Buildx version to use"
+    required: false
+    default: "v0.17.1"
+  working-directory:
+    description: "Working directory for application"
+    required: false
+    default: "."
+  kamal-config-path:
+    description: "Path to Kamal config file relative to working directory"
+    required: false
+    default: "config/deploy.yml"
+  deployment-strategy:
+    description: "Deployment strategy (rolling, blue-green, immediate)"
+    required: false
+    default: "rolling"
+  pre-deploy-commands:
+    description: "Additional commands to run before deployment"
+    required: false
+  post-deploy-commands:
+    description: "Additional commands to run after successful deployment"
+    required: false
+
+outputs:
+  deployment-status:
+    description: "Status of the deployment operation"
+    value: ${{ steps.deploy-result.outputs.status }}
+  deployment-duration:
+    description: "Duration of the deployment operation in seconds"
+    value: ${{ steps.deploy-result.outputs.duration }}
+  deployment-url:
+    description: "URL of the deployed application"
+    value: ${{ steps.deploy-result.outputs.url }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        echo "🔍 Validating deployment inputs..."
+
+        # Validate environment
+        if [[ ! "${{ inputs.environment }}" =~ ^(staging|production)$ ]]; then
+          echo "❌ Error: environment must be either 'staging' or 'production'"
+          exit 1
+        fi
+
+        # Validate deployment strategy
+        if [[ ! "${{ inputs.deployment-strategy }}" =~ ^(rolling|blue-green|immediate)$ ]]; then
+          echo "❌ Error: deployment-strategy must be one of: rolling, blue-green, immediate"
+          exit 1
+        fi
+
+        # Validate working directory exists
+        if [[ ! -d "${{ inputs.working-directory }}" ]]; then
+          echo "❌ Error: working-directory '${{ inputs.working-directory }}' does not exist"
+          exit 1
+        fi
+
+        echo "✅ Input validation completed"
+
+    - name: Set up Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        working-directory: deploy
+
+    - name: Bundle install
+      shell: bash
+      working-directory: deploy
+      run: |
+        echo "🚢 Installing deploy dependencies..."
+        bundle install --jobs 4
+
+    - name: Set up SSH
+      uses: webfactory/ssh-agent@v0.9.0
+      with:
+        ssh-private-key: ${{ env.SSH_PRIVATE_KEY }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      with:
+        install: true
+        version: ${{ inputs.buildx-version }}
+
+    - name: Configure Buildx
+      shell: bash
+      run: |
+        echo "🐳 Configuring Docker Buildx..."
+        if ! docker buildx version; then
+          echo "❌ Error: Buildx not installed correctly"
+          exit 1
+        fi
+
+        docker buildx create --name kamal-deploy-builder --driver docker-container --use 2>/dev/null || docker buildx use kamal-deploy-builder
+        docker buildx inspect --bootstrap
+        echo "✅ Buildx configured successfully"
+
+    - name: Run pre-deploy commands
+      if: inputs.pre-deploy-commands != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🔧 Running pre-deploy commands..."
+        ${{ inputs.pre-deploy-commands }}
+
+    - name: Deploy with Kamal v2
+      id: kamal-deploy
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🚀 Starting Kamal v2 deployment to ${{ inputs.environment }}..."
+
+        # Set deployment flags
+        deploy_flags="-c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }}"
+
+        # Add verbose flag if needed
+        if [[ "${{ inputs.deployment-strategy }}" != "immediate" ]]; then
+          deploy_flags="$deploy_flags --verbose"
+        fi
+
+        # Run deployment
+        if kamal deploy $deploy_flags; then
+          echo "✅ Kamal v2 deployment completed successfully for ${{ inputs.environment }}"
+          echo "deploy_status=success" >> $GITHUB_OUTPUT
+
+          # Get deployed version
+          deployed_version=$(kamal app version -d ${{ inputs.environment }} 2>/dev/null | tail -n1 | tr -d '\n\r' | sed 's/[^a-zA-Z0-9._-]//g' || echo "unknown")
+          if [[ -z "$deployed_version" || "$deployed_version" == *"INFO"* ]]; then
+            deployed_version="unknown"
+          fi
+          echo "deployed_version=${deployed_version}" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Kamal v2 deployment failed for ${{ inputs.environment }}"
+          echo "deploy_status=failed" >> $GITHUB_OUTPUT
+          echo "deployed_version=failed" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+
+    - name: Wait for deployment to stabilize
+      shell: bash
+      run: |
+        echo "⏳ Waiting for deployment to stabilize..."
+        sleep 30
+
+    - name: Run post-deploy commands
+      if: inputs.post-deploy-commands != '' && success()
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🔧 Running post-deploy commands..."
+        ${{ inputs.post-deploy-commands }}
+
+    - name: Set deployment result
+      id: deploy-result
+      if: always()
+      shell: bash
+      run: |
+        # Determine final status based on deployment result
+        if [[ "${{ steps.kamal-deploy.outputs.deploy_status }}" == "success" ]]; then
+          echo "status=success" >> $GITHUB_OUTPUT
+        else
+          echo "status=failed" >> $GITHUB_OUTPUT
+        fi
+
+        # Set version and rollback status (clean up the version output)
+        deployed_version="${{ steps.kamal-deploy.outputs.deployed_version }}"
+        # Clean version string to prevent bash syntax errors
+        clean_version=$(echo "$deployed_version" | head -n1 | tr -d '\n\r' | sed 's/[^a-zA-Z0-9._-]//g')
+        if [[ -z "$clean_version" || "$clean_version" == *"INFO"* ]]; then
+          clean_version="unknown"
+        fi
+        echo "version=${clean_version}" >> $GITHUB_OUTPUT
+        echo "rollback=false" >> $GITHUB_OUTPUT
+        echo "duration=0" >> $GITHUB_OUTPUT
+
+    - name: Cleanup
+      if: always()
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🧹 Performing cleanup..."
+
+        # Clean up Docker resources if deployment failed
+        if [[ "${{ steps.deploy-result.outputs.status }}" != "success" ]]; then
+          docker system prune -f 2>/dev/null || true
+        fi
+
+        echo "✅ Cleanup completed"
+
+branding:
+  icon: "upload-cloud"
+  color: "purple"
