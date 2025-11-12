@@ -214,6 +214,26 @@ runs:
         npm install -g yarn
         yarn --version
 
+    - name: Install system dependencies
+      shell: bash
+      run: |
+        echo "📦 Installing system dependencies..."
+        sudo apt-get update -qq
+        sudo apt-get install -y libpq-dev
+        echo "✅ System dependencies installed"
+
+    - name: Setup Bundler credentials for GitHub Packages
+      if: inputs.gh-token != ''
+      shell: bash
+      run: |
+        echo "🔐 Configuring Bundler for GitHub Packages..."
+        mkdir -p ~/.bundle
+        cat > ~/.bundle/config << EOF
+        ---
+        BUNDLE_RUBYGEMS__PKG__GITHUB__COM: "${{ inputs.gh-token }}"
+        EOF
+        echo "✅ Bundler credentials configured"
+
     - name: Set up Ruby
       uses: ruby/setup-ruby@v1
       with:
