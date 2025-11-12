@@ -219,7 +219,10 @@ runs:
       run: |
         echo "📦 Installing system dependencies..."
         sudo apt-get update -qq
-        sudo apt-get install -y libpq-dev
+        sudo apt-get install -y \
+          libpq-dev \
+          libgdal-dev \
+          gdal-bin
         echo "✅ System dependencies installed"
 
     - name: Setup Bundler credentials for GitHub Packages
