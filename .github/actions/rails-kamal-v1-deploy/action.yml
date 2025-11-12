@@ -1,0 +1,440 @@
+name: 'Rails Kamal v1 Deploy'
+description: 'Deploy Rails API applications (with Sidekiq support) using Kamal v1 with comprehensive configuration'
+author: 'WCMC DevOps Team'
+
+inputs:
+  environment:
+    description: 'Environment to deploy to (staging, production)'
+    required: true
+  kamal-version:
+    description: 'Kamal v1 version to use'
+    required: false
+    default: '1.8.3'
+  ruby-version:
+    description: 'Ruby version to use'
+    required: false
+    default: '3.2.2'
+  node-version:
+    description: 'Node.js version to use (for asset compilation)'
+    required: false
+    default: '20.12.0'
+  working-directory:
+    description: 'Working directory for Rails application'
+    required: false
+    default: '.'
+  
+  # Required Secrets
+  ssh-private-key:
+    description: 'SSH private key for server access'
+    required: true
+  kamal-registry-username:
+    description: 'Container registry username'
+    required: true
+  kamal-registry-password:
+    description: 'Container registry password'
+    required: true
+  rails-master-key:
+    description: 'Rails master key for credentials'
+    required: true
+  
+  # Database Configuration
+  database-hostname:
+    description: 'Database hostname'
+    required: true
+  database-name:
+    description: 'Database name'
+    required: true
+  database-username:
+    description: 'Database username'
+    required: true
+  database-password:
+    description: 'Database password'
+    required: true
+  database-port:
+    description: 'Database port'
+    required: false
+    default: '5432'
+  database-env-prefix:
+    description: 'Database environment variable prefix (e.g., API_PP_AUTHENTICATION, TARGET_TRACKER)'
+    required: false
+    default: ''
+  
+  # Redis Configuration (for Sidekiq)
+  redis-username:
+    description: 'Redis username'
+    required: false
+  redis-password:
+    description: 'Redis password'
+    required: false
+  redis-host:
+    description: 'Redis host'
+    required: false
+    default: 'host.docker.internal'
+  redis-port:
+    description: 'Redis port'
+    required: false
+    default: '6379'
+  redis-database:
+    description: 'Redis database number for Sidekiq'
+    required: false
+    default: '4'
+  
+  # Mail Configuration
+  mail-username:
+    description: 'Mail server username'
+    required: false
+  mail-password:
+    description: 'Mail server password'
+    required: false
+  
+  # Application Configuration
+  api-port:
+    description: 'API port for the application'
+    required: false
+    default: '3000'
+  backend-app-name:
+    description: 'Backend application name'
+    required: false
+  
+  # GitHub Token for private packages
+  gh-token:
+    description: 'GitHub token for private package access'
+    required: false
+  
+  # Deployment Options
+  skip-env-push:
+    description: 'Skip the kamal env push step'
+    required: false
+    default: 'false'
+  enable-ssh-test:
+    description: 'Enable SSH connection testing'
+    required: false
+    default: 'true'
+  additional-env-vars:
+    description: 'Additional environment variables in KEY=VALUE format, one per line'
+    required: false
+  pre-deploy-commands:
+    description: 'Commands to run before deployment'
+    required: false
+  post-deploy-commands:
+    description: 'Commands to run after successful deployment'
+    required: false
+
+outputs:
+  deployment-status:
+    description: 'Status of the deployment operation'
+    value: ${{ steps.deploy-result.outputs.status }}
+  deployment-duration:
+    description: 'Duration of the deployment operation in seconds'
+    value: ${{ steps.deploy-result.outputs.duration }}
+  start-time:
+    description: 'Deployment start time'
+    value: ${{ steps.set-times.outputs.start-time }}
+  end-time:
+    description: 'Deployment end time'
+    value: ${{ steps.set-times.outputs.end-time }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate inputs
+      shell: bash
+      run: |
+        echo "🔍 Validating Rails deployment inputs..."
+
+        # Validate environment
+        if [[ ! "${{ inputs.environment }}" =~ ^(staging|production)$ ]]; then
+          echo "❌ Error: environment must be either 'staging' or 'production'"
+          exit 1
+        fi
+
+        # Validate working directory
+        if [[ ! -d "${{ inputs.working-directory }}" ]]; then
+          echo "❌ Error: working-directory '${{ inputs.working-directory }}' does not exist"
+          exit 1
+        fi
+
+        echo "✅ Input validation completed for Rails deployment"
+
+    - name: Set deployment times
+      id: set-times
+      shell: bash
+      run: |
+        start_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        echo "start-time=${start_time}" >> $GITHUB_OUTPUT
+        echo "START_TIME=${start_time}" >> $GITHUB_ENV
+        echo "🕐 Deployment started at: ${start_time}"
+
+    - name: Validate required environment variables
+      shell: bash
+      run: |
+        echo "🔧 Validating required environment variables..."
+        
+        var_names=(
+          "SSH_PRIVATE_KEY"
+          "KAMAL_REGISTRY_USERNAME"
+          "KAMAL_REGISTRY_PASSWORD"
+          "RAILS_MASTER_KEY"
+          "DATABASE_HOSTNAME"
+          "DATABASE_NAME"
+          "DATABASE_USERNAME"
+          "DATABASE_PASSWORD"
+        )
+
+        for var_name in "${var_names[@]}"; do
+          # Use indirect variable expansion to check the value
+          value="${!var_name}"
+          if [[ -z "$value" ]]; then
+            echo "❌ Error: ${var_name} is not set or empty"
+            echo "Please add this secret to your GitHub environment (${{ inputs.environment }})"
+            exit 1
+          else
+            echo "✅ ${var_name} is set"
+          fi
+        done
+      env:
+        SSH_PRIVATE_KEY: ${{ inputs.ssh-private-key }}
+        KAMAL_REGISTRY_USERNAME: ${{ inputs.kamal-registry-username }}
+        KAMAL_REGISTRY_PASSWORD: ${{ inputs.kamal-registry-password }}
+        RAILS_MASTER_KEY: ${{ inputs.rails-master-key }}
+        DATABASE_HOSTNAME: ${{ inputs.database-hostname }}
+        DATABASE_NAME: ${{ inputs.database-name }}
+        DATABASE_USERNAME: ${{ inputs.database-username }}
+        DATABASE_PASSWORD: ${{ inputs.database-password }}
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Install Yarn
+      shell: bash
+      run: |
+        echo "📦 Installing Yarn..."
+        npm install -g yarn
+        yarn --version
+
+    - name: Set up Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: ${{ inputs.ruby-version }}
+        bundler-cache: true
+
+    - name: Install Kamal v1
+      shell: bash
+      run: |
+        echo "🚢 Installing Kamal v${{ inputs.kamal-version }}..."
+        gem install kamal -v ${{ inputs.kamal-version }}
+        kamal version
+
+    - name: Set up SSH
+      uses: webfactory/ssh-agent@v0.9.0
+      with:
+        ssh-private-key: ${{ inputs.ssh-private-key }}
+
+    - name: Test SSH connection
+      if: inputs.enable-ssh-test == 'true'
+      shell: bash
+      run: |
+        echo "🔑 Testing SSH connection..."
+        # Extract server hostname from kamal config if WEB_SERVER_DNS_NAME is set
+        if [[ -n "$WEB_SERVER_DNS_NAME" ]]; then
+          echo "Testing connection to: $WEB_SERVER_DNS_NAME"
+          if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -T wcmc@$WEB_SERVER_DNS_NAME echo "SSH connection successful" 2>/dev/null; then
+            echo "✅ SSH connection test passed"
+          else
+            echo "⚠️ SSH connection test failed, but continuing..."
+          fi
+        else
+          echo "ℹ️ WEB_SERVER_DNS_NAME not set, skipping SSH test"
+        fi
+      env:
+        WEB_SERVER_DNS_NAME: ${{ env.WEB_SERVER_DNS_NAME }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      with:
+        install: true
+
+    - name: Create environment-specific .env file
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🔐 Creating environment-specific .env file for Rails application..."
+        env_file=".env.${{ inputs.environment }}"
+
+        # Remove existing env file if it exists
+        rm -f "$env_file"
+
+        # Determine database prefix
+        db_prefix="${{ inputs.database-env-prefix }}"
+        if [[ -z "$db_prefix" ]]; then
+          # If no prefix provided, use uppercase of environment
+          db_prefix=$(echo "${{ inputs.environment }}" | tr '[:lower:]' '[:upper:]')
+        fi
+
+        # Core Rails secrets
+        cat <<EOF > "$env_file"
+        RAILS_ENV=${{ inputs.environment }}
+        RAILS_MASTER_KEY=${{ inputs.rails-master-key }}
+        KAMAL_REGISTRY_USERNAME=${{ inputs.kamal-registry-username }}
+        KAMAL_REGISTRY_PASSWORD=${{ inputs.kamal-registry-password }}
+        ${db_prefix}_DATABASE_HOSTNAME=${{ inputs.database-hostname }}
+        ${db_prefix}_DATABASE_NAME=${{ inputs.database-name }}
+        ${db_prefix}_DATABASE_USERNAME=${{ inputs.database-username }}
+        ${db_prefix}_DATABASE_PASSWORD=${{ inputs.database-password }}
+        ${db_prefix}_DATABASE_PORT=${{ inputs.database-port }}
+        EOF
+
+        # Add API port if provided
+        if [[ -n "${{ inputs.api-port }}" ]]; then
+          echo "${db_prefix}_API_PORT=${{ inputs.api-port }}" >> "$env_file"
+        fi
+
+        # Add backend app name if provided
+        if [[ -n "${{ inputs.backend-app-name }}" ]]; then
+          echo "BACKEND_APP_NAME=${{ inputs.backend-app-name }}" >> "$env_file"
+        fi
+
+        # Add Redis configuration if provided
+        if [[ -n "${{ inputs.redis-username }}" && -n "${{ inputs.redis-password }}" ]]; then
+          cat <<EOF >> "$env_file"
+        REDIS_USERNAME=${{ inputs.redis-username }}
+        REDIS_PASSWORD=${{ inputs.redis-password }}
+        SIDEKIQ_REDIS_URL=redis://${{ inputs.redis-username }}:${{ inputs.redis-password }}@${{ inputs.redis-host }}:${{ inputs.redis-port }}/${{ inputs.redis-database }}
+        EOF
+          echo "✅ Added Redis and Sidekiq configuration"
+        fi
+
+        # Add Mail configuration if provided
+        if [[ -n "${{ inputs.mail-username }}" && -n "${{ inputs.mail-password }}" ]]; then
+          cat <<EOF >> "$env_file"
+        MAIL_USERNAME=${{ inputs.mail-username }}
+        MAIL_PASSWORD=${{ inputs.mail-password }}
+        EOF
+          echo "✅ Added Mail server configuration"
+        fi
+
+        # Add GitHub token if provided
+        if [[ -n "${{ inputs.gh-token }}" ]]; then
+          echo "GH_TOKEN=${{ inputs.gh-token }}" >> "$env_file"
+          echo "✅ Added GitHub token"
+        fi
+
+        # Add additional environment variables if provided
+        if [[ -n "${{ inputs.additional-env-vars }}" ]]; then
+          echo "" >> "$env_file"
+          echo "# Additional environment variables" >> "$env_file"
+          echo "${{ inputs.additional-env-vars }}" >> "$env_file"
+          echo "✅ Added additional environment variables"
+        fi
+
+        # Set proper permissions
+        chmod 600 "$env_file"
+
+        echo "✅ Environment file created: $env_file"
+        echo "📋 Environment file contains $(wc -l < "$env_file") lines"
+
+    - name: Run pre-deploy commands
+      if: inputs.pre-deploy-commands != ''
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🔧 Running pre-deploy commands..."
+        env_file=".env.${{ inputs.environment }}"
+        export $(grep -v '^#' "$env_file" | xargs)
+        ${{ inputs.pre-deploy-commands }}
+
+    - name: Push environment variables to Kamal
+      if: inputs.skip-env-push != 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "📤 Pushing environment variables to Kamal..."
+        env_file=".env.${{ inputs.environment }}"
+        export $(grep -v '^#' "$env_file" | xargs)
+
+        if kamal env push -d ${{ inputs.environment }}; then
+          echo "✅ Environment variables pushed successfully"
+        else
+          echo "❌ Failed to push environment variables"
+          exit 1
+        fi
+
+    - name: Deploy with Kamal v1
+      id: kamal-deploy
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🚀 Starting Rails deployment with Kamal v1 to ${{ inputs.environment }}..."
+        start_time=$(date +%s)
+
+        env_file=".env.${{ inputs.environment }}"
+        export $(grep -v '^#' "$env_file" | xargs)
+
+        if kamal deploy -d ${{ inputs.environment }}; then
+          end_time=$(date +%s)
+          duration=$((end_time - start_time))
+          echo "deploy-duration=${duration}" >> $GITHUB_OUTPUT
+          echo "deploy-status=success" >> $GITHUB_OUTPUT
+          echo "✅ Rails deployment completed successfully in ${duration} seconds"
+        else
+          end_time=$(date +%s)
+          duration=$((end_time - start_time))
+          echo "deploy-duration=${duration}" >> $GITHUB_OUTPUT
+          echo "deploy-status=failed" >> $GITHUB_OUTPUT
+          echo "❌ Rails deployment failed after ${duration} seconds"
+          exit 1
+        fi
+
+    - name: Run post-deploy commands
+      if: inputs.post-deploy-commands != '' && success()
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🔧 Running post-deploy commands..."
+        env_file=".env.${{ inputs.environment }}"
+        export $(grep -v '^#' "$env_file" | xargs)
+        ${{ inputs.post-deploy-commands }}
+
+    - name: Set deployment end time
+      id: set-end-time
+      if: always()
+      shell: bash
+      run: |
+        end_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        echo "end-time=${end_time}" >> $GITHUB_OUTPUT
+        echo "END_TIME=${end_time}" >> $GITHUB_ENV
+        echo "🕐 Deployment ended at: ${end_time}"
+
+    - name: Set deployment result
+      id: deploy-result
+      if: always()
+      shell: bash
+      run: |
+        if [[ "${{ steps.kamal-deploy.outcome }}" == "success" ]]; then
+          echo "status=success" >> $GITHUB_OUTPUT
+        else
+          echo "status=failed" >> $GITHUB_OUTPUT
+        fi
+
+        # Get duration from deploy step
+        duration="${{ steps.kamal-deploy.outputs.deploy-duration }}"
+        echo "duration=${duration:-unknown}" >> $GITHUB_OUTPUT
+
+    - name: Cleanup environment file
+      if: always()
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        echo "🧹 Cleaning up environment file..."
+        env_file=".env.${{ inputs.environment }}"
+        if [[ -f "$env_file" ]]; then
+          rm -f "$env_file"
+          echo "✅ Environment file removed"
+        fi
+
+branding:
+  icon: 'server'
+  color: 'purple'
+

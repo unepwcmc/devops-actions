@@ -39,6 +39,7 @@ This repository enables multiple projects to reference standardized deployment a
 - **`kamal-v2-deploy`**: Full-featured deployment (requires all individual secrets)
 - **`kamal-v1-setup`**: Initial setup for Kamal v1 deployments
 - **`kamal-v1-deploy`**: Basic deployment capabilities for legacy projects
+- **`rails-kamal-v1-deploy`**: Rails API deployment with Sidekiq support (Kamal v1) 🆕
 
 #### Frontend Actions (Nuxt Applications)
 - **`nuxt-kamal-v1-setup`**: Initial setup for Nuxt frontend applications
@@ -259,6 +260,48 @@ jobs:
           azure-ad-client-secret: ${{ secrets.NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_SECRET }}
           azure-ad-tenant-id: ${{ secrets.NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_TENANT_ID }}
           wcmc-user-management-secret: ${{ secrets.NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET }}
+```
+
+#### Rails API with Sidekiq Deployment (Kamal v1) 🆕
+
+```yaml
+      # Rails API with Sidekiq - Simplified for production
+      - name: Deploy Rails API with Sidekiq
+        uses: unepwcmc/devops-actions/.github/actions/rails-kamal-v1-deploy@v1
+        with:
+          environment: 'production'
+          kamal-version: '1.8.3'
+          ruby-version: '3.2.2'
+          
+          # Required Secrets
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          kamal-registry-username: ${{ secrets.KAMAL_REGISTRY_USERNAME }}
+          kamal-registry-password: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
+          rails-master-key: ${{ secrets.RAILS_MASTER_KEY }}
+          
+          # Database (with custom prefix matching your Kamal config)
+          database-hostname: ${{ secrets.DATABASE_HOSTNAME }}
+          database-name: ${{ secrets.DATABASE_NAME }}
+          database-username: ${{ secrets.DATABASE_USERNAME }}
+          database-password: ${{ secrets.DATABASE_PASSWORD }}
+          database-port: '5432'
+          database-env-prefix: 'API_PP_AUTHENTICATION'  # Matches your env vars
+          
+          # Redis & Sidekiq
+          redis-username: ${{ secrets.REDIS_USERNAME }}
+          redis-password: ${{ secrets.REDIS_PASSWORD }}
+          redis-host: 'host.docker.internal'
+          redis-port: '6379'
+          redis-database: '4'
+          
+          # Mail Server
+          mail-username: ${{ secrets.MAIL_USERNAME }}
+          mail-password: ${{ secrets.MAIL_PASSWORD }}
+          
+          # Application Config
+          api-port: '3000'
+          backend-app-name: 'my-rails-api'
+          gh-token: ${{ secrets.GH_TOKEN }}
 ```
 
 #### Nuxt Frontend Deployment
@@ -494,6 +537,7 @@ uses: unepwcmc/devops-actions/.github/actions/kamal-v2-deploy@main  # latest
 - **[USAGE.md](USAGE.md)** - Comprehensive usage guide with examples
 - **[SECURITY.md](SECURITY.md)** - Security features and best practices  
 - **[RELEASES.md](RELEASES.md)** - Version history and release notes
+- Check each action's README in `.github/actions/` for detailed documentation
 
 ## 📞 Support
 

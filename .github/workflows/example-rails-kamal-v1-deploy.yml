@@ -1,0 +1,160 @@
+name: Rails API - Kamal v1 Deployment (Example)
+
+# This is an example workflow showing how to use the rails-kamal-v1-deploy action
+# Copy this to your repository and customize as needed
+
+on:
+  push:
+    branches:
+      - devops/deploy-production
+      - devops/deploy-staging
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+
+jobs:
+  deploy:
+    name: Deploy Rails API with Kamal v1
+    runs-on: self-hosted
+    environment: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/devops/deploy-production' && 'production') || 'staging' }}
+    
+    env:
+      DOCKER_BUILDKIT: 1
+      ENVIRONMENT: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/devops/deploy-production' && 'production') || 'staging' }}
+      NODE_ENV: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/devops/deploy-production' && 'production') || 'staging' }}
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Send Slack notification - Started
+        id: slack-start
+        uses: ./.github/actions/slack-notify
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: started
+          action-type: deploy
+          environment: ${{ env.ENVIRONMENT }}
+          repository: ${{ github.repository }}
+          repository-url: ${{ github.server_url }}/${{ github.repository }}
+          action-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          actor: ${{ github.actor }}
+          actor-url: ${{ github.server_url }}/${{ github.actor }}
+          workflow-name: ${{ github.workflow }}
+          run-id: ${{ github.run_id }}
+          commit-message: ${{ github.event.head_commit.message || 'Manual deployment trigger' }}
+          runner-name: ${{ runner.name }}
+          start-time: ${{ env.START_TIME }}
+          kamal-version: '1.8.3'
+
+      - name: Deploy Rails API with Kamal v1
+        id: deploy
+        uses: ./.github/actions/rails-kamal-v1-deploy
+        with:
+          environment: ${{ env.ENVIRONMENT }}
+          kamal-version: '1.8.3'
+          ruby-version: '3.2.2'
+          node-version: '20.12.0'
+          working-directory: '.'
+          
+          # Required Secrets
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          kamal-registry-username: ${{ secrets.KAMAL_REGISTRY_USERNAME }}
+          kamal-registry-password: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
+          rails-master-key: ${{ secrets.RAILS_MASTER_KEY }}
+          
+          # Database Configuration
+          # Note: The database-env-prefix should match your Kamal config
+          # For example, if your config uses API_PP_AUTHENTICATION_DATABASE_HOSTNAME,
+          # set database-env-prefix to 'API_PP_AUTHENTICATION'
+          database-hostname: ${{ secrets.DATABASE_HOSTNAME }}
+          database-name: ${{ secrets.DATABASE_NAME }}
+          database-username: ${{ secrets.DATABASE_USERNAME }}
+          database-password: ${{ secrets.DATABASE_PASSWORD }}
+          database-port: ${{ secrets.DATABASE_PORT }}
+          database-env-prefix: 'API_PP_AUTHENTICATION'  # Customize this to match your app
+          
+          # Redis Configuration (for Sidekiq)
+          redis-username: ${{ secrets.REDIS_USERNAME }}
+          redis-password: ${{ secrets.REDIS_PASSWORD }}
+          redis-host: 'host.docker.internal'
+          redis-port: '6379'
+          redis-database: '4'
+          
+          # Mail Configuration
+          mail-username: ${{ secrets.MAIL_USERNAME }}
+          mail-password: ${{ secrets.MAIL_PASSWORD }}
+          
+          # Application Configuration
+          api-port: ${{ secrets.API_PP_AUTHENTICATION_API_PORT }}
+          backend-app-name: ${{ secrets.BACKEND_APP_NAME }}
+          
+          # GitHub Token
+          gh-token: ${{ secrets.GH_TOKEN }}
+          
+          # Optional: Additional environment variables
+          # additional-env-vars: |
+          #   CUSTOM_VAR_1=value1
+          #   CUSTOM_VAR_2=value2
+          
+          # Optional: Pre/Post deploy commands
+          # pre-deploy-commands: |
+          #   echo "Running pre-deploy tasks..."
+          # post-deploy-commands: |
+          #   echo "Running post-deploy tasks..."
+
+      - name: Send Slack notification - Success
+        if: success()
+        uses: ./.github/actions/slack-notify
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: success
+          action-type: deploy
+          environment: ${{ env.ENVIRONMENT }}
+          repository: ${{ github.repository }}
+          repository-url: ${{ github.server_url }}/${{ github.repository }}
+          action-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          actor: ${{ github.actor }}
+          actor-url: ${{ github.server_url }}/${{ github.actor }}
+          workflow-name: ${{ github.workflow }}
+          run-id: ${{ github.run_id }}
+          commit-message: ${{ github.event.head_commit.message || 'Manual deployment trigger' }}
+          runner-name: ${{ runner.name }}
+          start-time: ${{ steps.deploy.outputs.start-time }}
+          end-time: ${{ steps.deploy.outputs.end-time }}
+          deployment-duration: ${{ steps.deploy.outputs.deployment-duration }}
+          kamal-version: '1.8.3'
+          update-message-ts: ${{ steps.slack-start.outputs.message-ts }}
+
+      - name: Send Slack notification - Failure
+        if: failure()
+        uses: ./.github/actions/slack-notify
+        with:
+          slack-bot-token: ${{ secrets.SLACK_BOT_TOKEN }}
+          slack-channel-id: ${{ secrets.SLACK_CHANNEL_ID }}
+          notification-type: failure
+          action-type: deploy
+          environment: ${{ env.ENVIRONMENT }}
+          repository: ${{ github.repository }}
+          repository-url: ${{ github.server_url }}/${{ github.repository }}
+          action-run-url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          actor: ${{ github.actor }}
+          actor-url: ${{ github.server_url }}/${{ github.actor }}
+          workflow-name: ${{ github.workflow }}
+          run-id: ${{ github.run_id }}
+          commit-message: ${{ github.event.head_commit.message || 'Manual deployment trigger' }}
+          runner-name: ${{ runner.name }}
+          start-time: ${{ steps.deploy.outputs.start-time }}
+          end-time: ${{ steps.deploy.outputs.end-time }}
+          failure-reason: 'Deployment failed - check logs for details'
+          kamal-version: '1.8.3'
+          update-message-ts: ${{ steps.slack-start.outputs.message-ts }}
+

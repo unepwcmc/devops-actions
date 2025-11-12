@@ -1,0 +1,31 @@
+# Documentation and Templates
+# These are examples and documentation for reference only
+# Projects should copy what they need to their own repositories
+# They are gitignored to keep this repo focused on reusable actions
+docs/
+templates/
+
+# Editor files
+.DS_Store
+.vscode/
+.idea/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Kamal files
+.kamal/secrets*
+!.kamal/secrets-common.template
+!.kamal/secrets-common.minimal.template
+!.kamal/secrets-common.nuxt.template
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.swp
+*~
+
