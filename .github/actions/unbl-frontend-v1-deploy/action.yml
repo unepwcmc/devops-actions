@@ -1,4 +1,4 @@
-name: 'UNBL Frontend Deploy'
+name: 'UNBL Frontend v1 Deploy'
 description: 'Build and deploy UNBL frontend (MAP + ADMIN) to Azure Storage'
 author: 'WCMC DevOps Team'
 

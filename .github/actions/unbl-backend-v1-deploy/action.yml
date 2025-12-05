@@ -1,4 +1,4 @@
-name: 'UNBL Backend Deploy (From unbl-infrastructure repo)'
+name: 'UNBL Backend v1 Deploy (From unbl-infrastructure repo)'
 description: 'Deploy UNBL services - provisions infrastructure if needed, then deploys code'
 author: 'WCMC DevOps Team'
 
