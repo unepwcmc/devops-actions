@@ -1,0 +1,122 @@
+name: 'UNBL Frontend Deploy'
+description: 'Build and deploy UNBL frontend (MAP + ADMIN) to Azure Storage'
+author: 'WCMC DevOps Team'
+
+inputs:
+  environment:
+    description: 'Deployment environment (staging, production)'
+    required: true
+  azure-credentials:
+    description: 'Azure service principal credentials (JSON)'
+    required: true
+  infrastructure-ref:
+    description: 'Branch/tag to checkout from unbl-infrastructure'
+    required: false
+    default: 'azure-bicep'
+  frontend-ref:
+    description: 'Branch/tag to checkout from unbl-frontend'
+    required: false
+    default: 'main'
+
+outputs:
+  deployment-status:
+    description: 'Status of the deployment operation'
+    value: ${{ steps.deploy-result.outputs.status }}
+  deployment-duration:
+    description: 'Duration of the deployment operation in seconds'
+    value: ${{ steps.deploy-result.outputs.duration }}
+  deployment-url:
+    description: 'URL of the deployed application'
+    value: ${{ steps.deploy-result.outputs.url }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Start timing
+      id: start
+      shell: bash
+      run: echo "start_time=$(date +%s)" >> $GITHUB_OUTPUT
+
+    - name: Checkout frontend repo
+      uses: actions/checkout@v4
+      with:
+        repository: unep-wcmc/unbl-frontend
+        ref: ${{ inputs.frontend-ref }}
+        path: ./unbl-frontend
+        token: ${{ env.GH_TOKEN }}
+
+    - name: Checkout infrastructure repo
+      uses: actions/checkout@v4
+      with:
+        repository: unep-wcmc/unbl-infrastructure
+        ref: ${{ inputs.infrastructure-ref }}
+        path: ./unbl-infrastructure
+        token: ${{ env.GH_TOKEN }}
+
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ inputs.azure-credentials }}
+
+    - name: Deploy frontend using infrastructure script
+      id: deploy
+      shell: bash
+      working-directory: ./unbl-infrastructure/azure
+      env:
+        # Pass environment variables to the script
+        GATSBY_AUTH0_DOMAIN: ${{ env.GATSBY_AUTH0_DOMAIN }}
+        AUTH0_CLIENT_ID: ${{ env.AUTH0_CLIENT_ID }}
+        AUTH0_APPLICATION_CLIENT_ID: ${{ env.AUTH0_APPLICATION_CLIENT_ID }}
+        GATSBY_AUTH0_AUDIENCE: ${{ env.GATSBY_AUTH0_AUDIENCE }}
+        GATSBY_MAPBOX_TOKEN: ${{ env.GATSBY_MAPBOX_TOKEN }}
+      run: |
+        RG="unbl-${{ inputs.environment }}-rg"
+        
+        echo "Deploying frontend using deploy-frontend-full.sh..."
+        echo "  Resource Group: $RG"
+        
+        # The deploy-frontend-full.sh script handles:
+        # - Creating .env with Auth0 and Mapbox config
+        # - Getting storage account from Azure
+        # - Building earth-map and earth-admin
+        # - Uploading to Azure Storage
+        # - Enabling static website hosting
+        # - Printing URLs (Map and Admin)
+        ./scripts/deploy-frontend-full.sh
+
+    - name: Run health checks
+      shell: bash
+      working-directory: ./unbl-infrastructure/azure
+      run: |
+        RG="unbl-${{ inputs.environment }}-rg"
+        ENV="${{ inputs.environment }}"
+        
+        echo "Running health checks..."
+        ./scripts/health-check.sh --resource-group "$RG" --environment "$ENV" || {
+          echo "⚠️ Some health checks failed"
+          echo "Frontend may need more time to initialize"
+        }
+
+    - name: Set deployment result
+      id: deploy-result
+      shell: bash
+      working-directory: ./unbl-infrastructure/azure
+      run: |
+        END_TIME=$(date +%s)
+        DURATION=$((END_TIME - ${{ steps.start.outputs.start_time }}))
+        
+        # Get frontend URL from deployment outputs
+        RG="unbl-${{ inputs.environment }}-rg"
+        STORAGE_ACCOUNT=$(az storage account list \
+          --resource-group "$RG" \
+          --query "[?contains(name, 'frontend')].name" -o tsv | head -1)
+        FRONTEND_URL="https://${STORAGE_ACCOUNT}.z33.web.core.windows.net/"
+        
+        echo "status=success" >> $GITHUB_OUTPUT
+        echo "duration=$DURATION" >> $GITHUB_OUTPUT
+        echo "url=$FRONTEND_URL" >> $GITHUB_OUTPUT
+        
+        echo "✅ Deployment complete!"
+        echo "   Duration: ${DURATION}s"
+        echo "   Frontend URL: $FRONTEND_URL"
+
