@@ -1,39 +1,104 @@
-# UNBL Frontend Deployment Workflow
+# UNBL Frontend Deploy Action
 
-## What `deploy.yml` Does
+Builds and deploys UNBL frontend applications (earth-map and earth-admin) to Azure Storage static website hosting.
 
-This workflow deploys UNBL frontend applications (Map and Admin) to Azure Storage Static Website.
+## Inputs
 
-**Location**: `unbl-frontend/.github/workflows/deploy.yml`
+| Input | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `environment` | Yes | - | Deployment environment (`staging` or `production`) |
+| `azure-credentials` | Yes | - | Azure service principal credentials (JSON) |
+| `infrastructure-ref` | No | `azure-bicep` | Branch/tag to checkout from unbl-infrastructure |
+| `frontend-ref` | No | `main` | Branch/tag to checkout from unbl-frontend |
 
-**Triggers**: Push to `main` (production) or `develop` (staging)
+## Outputs
 
-## Connection to devops-actions Repository
+| Output | Description |
+|--------|-------------|
+| `deployment-duration` | Deployment duration in seconds |
+| `frontend-url` | Frontend Map app URL |
+| `admin-url` | Admin dashboard URL |
 
-This workflow calls the `unbl-frontend-deploy` action from the `devops-actions` repository:
+## Environment Variables Required
+
+- `GH_TOKEN` - GitHub Personal Access Token (to checkout private repos)
+- `GATSBY_AUTH0_DOMAIN` - Auth0 domain (e.g., `unbl-staging-wcmc.eu.auth0.com`)
+- `AUTH0_CLIENT_ID` - Auth0 SPA client ID
+- `AUTH0_APPLICATION_CLIENT_ID` - Auth0 M2M application client ID
+- `GATSBY_AUTH0_AUDIENCE` - Auth0 API audience
+- `GATSBY_MAPBOX_TOKEN` - Mapbox public token for maps
+
+## Usage Example
 
 ```yaml
-uses: unep-wcmc/devops-actions/.github/actions/unbl-frontend-deploy@v1
+- name: Deploy Frontend
+  id: frontend
+  uses: unep-wcmc/devops-actions/.github/actions/unbl-frontend-deploy@v1
+  with:
+    environment: 'staging'
+    azure-credentials: ${{ secrets.AZURE_SP_UNBL }}
+  env:
+    GH_TOKEN: ${{ secrets.GH_TOKEN }}
+    GATSBY_AUTH0_DOMAIN: ${{ secrets.GATSBY_AUTH0_DOMAIN }}
+    AUTH0_CLIENT_ID: ${{ secrets.AUTH0_CLIENT_ID }}
+    AUTH0_APPLICATION_CLIENT_ID: ${{ secrets.AUTH0_APPLICATION_CLIENT_ID }}
+    GATSBY_AUTH0_AUDIENCE: ${{ secrets.GATSBY_AUTH0_AUDIENCE }}
+    GATSBY_MAPBOX_TOKEN: ${{ secrets.GATSBY_MAPBOX_TOKEN }}
+
+- name: Show deployed URLs
+  run: |
+    echo "Map: ${{ steps.frontend.outputs.frontend-url }}"
+    echo "Admin: ${{ steps.frontend.outputs.admin-url }}"
 ```
 
-The action is located at: `devops-actions/.github/actions/unbl-frontend-deploy/action.yml`
+## What It Does
 
-### Steps
+1. Checks out `unbl-frontend` (source code) and `unbl-infrastructure` (deployment scripts)
+2. Logs into Azure
+3. Calls **`unbl-infrastructure/azure/scripts/deploy-frontend-full.sh`**, which handles:
+   - Creating `.env` file with Auth0 and Mapbox configuration
+   - Getting frontend storage account name from Azure
+   - Building both frontend apps via Docker:
+     - `earth-map` (Map application)
+     - `earth-admin` (Admin dashboard)
+   - Uploading `earth-map` to storage root (`/`)
+   - Uploading `earth-admin` to `/admin/` path
+   - Enabling static website hosting with SPA routing
+   - Printing deployment URLs
+4. Calls **`unbl-infrastructure/azure/scripts/health-check.sh`** to validate deployment
+5. Reports deployment status and duration
 
-1. **Notify Start**: Sends Slack notification that deployment has started
-2. **Deploy Frontend**: Calls `unbl-frontend-deploy` action from `devops-actions` repository, which:
-   - Checks out `unbl-frontend` and `unbl-infrastructure` repositories
-   - Authenticates to Azure
-   - Builds both frontend applications (earth-map and earth-admin) via Docker
-   - Uploads files to Azure Storage Static Website
-   - Enables static website hosting with SPA routing
-   - Runs health checks via `unbl-infrastructure/azure/scripts/health-check.sh`
-3. **Notify Success/Failure**: Sends Slack notification with deployment status and duration
-4. **Show Deployment Info**: Displays deployment summary (Map URL, Admin URL, duration)
+**Key Point:** This action orchestrates the deployment by calling scripts from the `unbl-infrastructure` repository. All deployment logic is centralized in the infrastructure repo.
 
-### Infrastructure Scripts
+**Scripts Used:**
+- `unbl-infrastructure/azure/scripts/deploy-frontend-full.sh` - Frontend build and deployment
+- `unbl-infrastructure/azure/scripts/health-check.sh` - Post-deployment validation
 
-The `devops-actions` action uses scripts from the `unbl-infrastructure` repository:
-- `unbl-infrastructure/azure/scripts/deploy-frontend-full.sh` - Builds and deploys static files
-- `unbl-infrastructure/azure/scripts/health-check.sh` - Validates deployment health
+## Features
+
+- **Dual app deployment**: Deploys both Map and Admin in one action
+- **Docker builds**: Consistent builds across environments
+- **SPA routing**: Configured for client-side routing
+- **Health checks**: Validates both apps are accessible
+- **Timing**: Reports deployment duration
+
+## Frontend Structure
+
+```
+Storage Root ($web)
+├── index.html           (earth-map)
+├── static/
+├── page-data/
+└── admin/               (earth-admin)
+    ├── index.html
+    ├── static/
+    └── page-data/
+```
+
+## Prerequisites
+
+- Azure Storage Account deployed with static website enabled
+- GitHub Personal Access Token with repo access
+- All Auth0 configuration completed
+- Mapbox token configured
 
