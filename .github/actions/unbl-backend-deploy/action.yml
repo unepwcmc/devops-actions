@@ -1,0 +1,166 @@
+name: 'UNBL Backend Deploy (From unbl-infrastructure repo)'
+description: 'Deploy UNBL services - provisions infrastructure if needed, then deploys code'
+author: 'WCMC DevOps Team'
+
+inputs:
+  environment:
+    description: 'Deployment environment (staging, production)'
+    required: true
+  azure-credentials:
+    description: 'Azure service principal credentials (JSON)'
+    required: true
+  infrastructure-ref:
+    description: 'Branch/tag to checkout from unbl-infrastructure'
+    required: false
+    default: 'azure-bicep'
+  services-ref:
+    description: 'Branch/tag to checkout from unbl-services'
+    required: false
+    default: 'main'
+  run-tests:
+    description: 'Run unit tests before deployment'
+    required: false
+    default: 'true'
+  postgres-admin-password:
+    description: 'PostgreSQL admin password (required for infrastructure provisioning)'
+    required: true
+
+outputs:
+  deployment-status:
+    description: 'Status of the deployment operation'
+    value: ${{ steps.deploy-result.outputs.status }}
+  deployment-duration:
+    description: 'Duration of the deployment operation in seconds'
+    value: ${{ steps.deploy-result.outputs.duration }}
+  deployment-url:
+    description: 'URL of the deployed application'
+    value: ${{ steps.deploy-result.outputs.url }}
+  image-tag:
+    description: 'Docker image tag deployed'
+    value: ${{ steps.deploy.outputs.image_tag }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Start timing
+      id: start
+      shell: bash
+      run: echo "start_time=$(date +%s)" >> $GITHUB_OUTPUT
+
+    - name: Checkout services repo
+      uses: actions/checkout@v4
+      with:
+        repository: unep-wcmc/unbl-services
+        ref: ${{ inputs.services-ref }}
+        path: ./unbl-services
+        token: ${{ env.GH_TOKEN }}
+
+    - name: Checkout infrastructure repo
+      uses: actions/checkout@v4
+      with:
+        repository: unep-wcmc/unbl-infrastructure
+        ref: ${{ inputs.infrastructure-ref }}
+        path: ./unbl-infrastructure
+        token: ${{ env.GH_TOKEN }}
+
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ inputs.azure-credentials }}
+
+    - name: Provision infrastructure
+      shell: bash
+      working-directory: ./unbl-infrastructure/azure
+      run: |
+        RG="unbl-${{ inputs.environment }}-rg"
+        ENV="${{ inputs.environment }}"
+        
+        echo "🏗️ Provisioning services infrastructure..."
+        
+        # Create .env file with required secrets
+        cat > .env << 'EOF'
+        POSTGRES_ADMIN_PASSWORD=${{ inputs.postgres-admin-password }}
+        MONGO_ADMIN_PASSWORD=${{ env.MONGO_ADMIN_PASSWORD }}
+        AUTH0_CLIENT_ID=${{ env.AUTH0_CLIENT_ID }}
+        AUTH0_CLIENT_SECRET=${{ env.AUTH0_CLIENT_SECRET }}
+        AUTH0_APPLICATION_CLIENT_ID=${{ env.AUTH0_APPLICATION_CLIENT_ID }}
+        AUTH0_EXTENSION_URL=${{ env.AUTH0_EXTENSION_URL }}
+        SERVICE_API_KEY=${{ env.SERVICE_API_KEY }}
+        SERVICE_API_READ_KEY=${{ env.SERVICE_API_READ_KEY }}
+        GATSBY_MAPBOX_TOKEN=${{ env.GATSBY_MAPBOX_TOKEN }}
+        EOF
+        
+        source .env
+        
+        # Deploy infrastructure using Bicep
+        # The Bicep deployment is idempotent - safe to run multiple times
+        ./scripts/deploy.sh --yes --skip-validation
+        
+        # Populate Key Vault secrets
+        ./scripts/populate-secrets.sh
+        
+        echo "✅ Infrastructure provisioned"
+
+    - name: Run unit tests
+      if: inputs.run-tests == 'true'
+      shell: bash
+      working-directory: ./unbl-services
+      run: |
+        echo "Running unit tests..."
+        docker run --rm \
+          -v $(pwd):/workspace \
+          -w /workspace \
+          --platform linux/amd64 \
+          node:18.20.4-bullseye-slim \
+          sh -c 'npm ci && npm run test:unit'
+        echo "✅ Unit tests passed"
+
+    - name: Deploy services 
+      id: deploy
+      shell: bash
+      working-directory: ./unbl-infrastructure/azure
+      run: |
+        RG="unbl-${{ inputs.environment }}-rg"
+        
+        echo "Deploying services using deploy-backend.sh..."
+        echo "  Resource Group: $RG"
+        
+        # The deploy-backend.sh script handles:
+        # - Finding ACR and services repo
+        # - Building Docker image (ACR Tasks)
+        # - Configuring App Services
+        # - Restarting services
+        # - Waiting for initialization
+        # - Printing API and TiTiler URLs
+        ./scripts/deploy-backend.sh --resource-group "$RG"
+        
+        echo "image_tag=${{ github.sha }}" >> $GITHUB_OUTPUT
+
+    - name: Run health checks
+      shell: bash
+      working-directory: ./unbl-infrastructure/azure
+      run: |
+        RG="unbl-${{ inputs.environment }}-rg"
+        ENV="${{ inputs.environment }}"
+        
+        echo "Running health checks..."
+        ./scripts/health-check.sh --resource-group "$RG" --environment "$ENV" || {
+          echo "⚠️ Some health checks failed"
+          echo "Services may need more time to initialize"
+        }
+
+    - name: Set deployment result
+      id: deploy-result
+      shell: bash
+      run: |
+        END_TIME=$(date +%s)
+        DURATION=$((END_TIME - ${{ steps.start.outputs.start_time }}))
+        API_URL="https://unbl-${{ inputs.environment }}-api.azurewebsites.net"
+        
+        echo "status=success" >> $GITHUB_OUTPUT
+        echo "duration=$DURATION" >> $GITHUB_OUTPUT
+        echo "url=$API_URL" >> $GITHUB_OUTPUT
+        
+        echo "✅ Deployment complete!"
+        echo "   Duration: ${DURATION}s"
+        echo "   API URL: $API_URL"
