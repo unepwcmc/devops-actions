@@ -40,7 +40,7 @@ runs:
     - name: Checkout frontend repo
       uses: actions/checkout@v4
       with:
-        repository: unep-wcmc/unbl-frontend
+        repository: unepwcmc/unbl-frontend
         ref: ${{ inputs.frontend-ref }}
         path: ./unbl-frontend
         token: ${{ env.GH_TOKEN }}
@@ -48,7 +48,7 @@ runs:
     - name: Checkout infrastructure repo
       uses: actions/checkout@v4
       with:
-        repository: unep-wcmc/unbl-infrastructure
+        repository: unepwcmc/unbl-infrastructure
         ref: ${{ inputs.infrastructure-ref }}
         path: ./unbl-infrastructure
         token: ${{ env.GH_TOKEN }}
