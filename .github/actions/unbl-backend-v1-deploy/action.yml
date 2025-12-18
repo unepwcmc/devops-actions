@@ -12,7 +12,7 @@ inputs:
   infrastructure-ref:
     description: 'Branch/tag to checkout from unbl-infrastructure'
     required: false
-    default: 'azure-bicep'
+    default: 'remove-stac-titiler'
   services-ref:
     description: 'Branch/tag to checkout from unbl-services'
     required: false
