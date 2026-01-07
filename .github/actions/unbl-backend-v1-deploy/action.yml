@@ -16,7 +16,7 @@ inputs:
   services-ref:
     description: 'Branch/tag to checkout from unbl-services'
     required: false
-    default: 'main'
+    default: 'new-staging-deploy'
   run-tests:
     description: 'Run unit tests before deployment'
     required: false

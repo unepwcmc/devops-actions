@@ -16,7 +16,7 @@ inputs:
   frontend-ref:
     description: 'Branch/tag to checkout from unbl-frontend'
     required: false
-    default: 'main'
+    default: 'new-staging-deploy'
   postgres-admin-password:
     description: 'PostgreSQL admin password (required for infrastructure provisioning)'
     required: true
