@@ -56,6 +56,12 @@ runs:
         path: ./unbl-infrastructure
         token: ${{ env.GH_TOKEN }}
 
+    - name: Install Azure CLI
+      shell: bash
+      run: |
+        curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+        az version
+
     - name: Azure Login
       uses: azure/login@v1
       with:
