@@ -1,0 +1,221 @@
+name: 'UNBL Geoanalytics v1 Deploy'
+description: 'Deploy UNBL geoanalytics services (shared infra + stacman/pretiler/exactextract) to Azure'
+author: 'WCMC DevOps Team'
+
+inputs:
+  environment:
+    description: 'Deployment environment (staging, production)'
+    required: true
+  azure-credentials:
+    description: 'Azure service principal credentials (JSON)'
+    required: true
+  geoanalytics-ref:
+    description: 'Branch/tag to checkout from unbl-geoanalytics'
+    required: false
+    default: 'main'
+  location:
+    description: 'Azure region (e.g. uksouth)'
+    required: false
+    default: 'uksouth'
+  deploy-shared-infra:
+    description: 'Deploy shared resources (storage + ACR + container environment)'
+    required: false
+    default: 'true'
+  deploy-stacman:
+    description: 'Deploy stacman service'
+    required: false
+    default: 'true'
+  deploy-pretiler:
+    description: 'Deploy pretiler service'
+    required: false
+    default: 'true'
+  deploy-exactextract:
+    description: 'Deploy exactextract service'
+    required: false
+    default: 'true'
+
+outputs:
+  deployment-status:
+    description: 'Status of the deployment operation'
+    value: ${{ steps.deploy-result.outputs.status }}
+  deployment-duration:
+    description: 'Duration of the deployment operation in seconds'
+    value: ${{ steps.deploy-result.outputs.duration }}
+  resource-group:
+    description: 'Resource group used for deployment'
+    value: ${{ steps.deploy-result.outputs.resource_group }}
+  container-registry:
+    description: 'ACR name used for deployment'
+    value: ${{ steps.deploy-result.outputs.acr_name }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Start timing
+      id: start
+      shell: bash
+      run: echo "start_time=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+    - name: Checkout geoanalytics repo
+      uses: actions/checkout@v4
+      with:
+        repository: unepwcmc/unbl-geoanalytics
+        ref: ${{ inputs.geoanalytics-ref }}
+        path: ./unbl-geoanalytics
+        token: ${{ env.GH_TOKEN }}
+
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ inputs.azure-credentials }}
+
+    - name: Compute names
+      id: names
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        ENV_IN="${{ inputs.environment }}"
+        if [ "$ENV_IN" = "production" ]; then
+          ENV_SHORT="prod"
+        else
+          ENV_SHORT="$ENV_IN"
+        fi
+
+        echo "env_short=$ENV_SHORT" >> "$GITHUB_OUTPUT"
+        echo "rg=unbl-geoanalytics-${ENV_SHORT}-rg" >> "$GITHUB_OUTPUT"
+        echo "storage=unblgeoanalytics${ENV_SHORT}" >> "$GITHUB_OUTPUT"
+        echo "acr=unblgeoanalyticsregistry${ENV_SHORT}" >> "$GITHUB_OUTPUT"
+        echo "container_env=unbl-geoanalytics-managed-env-${ENV_SHORT}" >> "$GITHUB_OUTPUT"
+
+    - name: Create resource group (idempotent)
+      shell: bash
+      run: |
+        set -euo pipefail
+        RG="${{ steps.names.outputs.rg }}"
+        LOCATION="${{ inputs.location }}"
+        az group show --name "$RG" >/dev/null 2>&1 || az group create --name "$RG" --location "$LOCATION" --output none
+
+    - name: Deploy shared geoanalytics resources (idempotent)
+      if: inputs.deploy-shared-infra == 'true'
+      uses: azure/arm-deploy@v1
+      with:
+        scope: resourcegroup
+        template: ./unbl-geoanalytics/infra/shared-resources-template.json
+        resourceGroupName: ${{ steps.names.outputs.rg }}
+        parameters: storage_account_name=${{ steps.names.outputs.storage }} container_registry_name=${{ steps.names.outputs.acr }} container_environment_name=${{ steps.names.outputs.container_env }} location=${{ inputs.location }}
+        deploymentMode: Incremental
+
+    - name: Build/push/deploy stacman
+      if: inputs.deploy-stacman == 'true'
+      shell: bash
+      working-directory: ./unbl-geoanalytics
+      run: |
+        set -euo pipefail
+        ACR_NAME="${{ steps.names.outputs.acr }}"
+        docker_server="$(az acr show --name "$ACR_NAME" --query loginServer --output tsv)"
+        az acr login --name "$ACR_NAME" >/dev/null
+
+        docker build --platform linux/amd64 -t "${ACR_NAME}/stacman:latest" stacman/
+        docker tag "${ACR_NAME}/stacman:latest" "$docker_server/stacman:latest"
+        docker push "$docker_server/stacman:latest"
+
+        az deployment group create \
+          --resource-group "${{ steps.names.outputs.rg }}" \
+          --template-file stacman/template.json \
+          --name stacman \
+          --mode Incremental \
+          --parameters \
+            storage_account_name="${{ steps.names.outputs.storage }}" \
+            container_environment_name="${{ steps.names.outputs.container_env }}" \
+            container_registry_name="$ACR_NAME" \
+            image_name="stacman:latest" \
+            function_app_name="unbl-stacman-${{ steps.names.outputs.env_short }}" \
+            location="${{ inputs.location }}" \
+            azure_raster_storage_connection_string="${RASTER_STORAGE_CONNECTION_STRING:-}" \
+            default_stac_host="${DEFAULT_STAC_HOST:-}" \
+            pghost="${PGHOST:-}" \
+            pgdatabase="${PGDATABASE:-}" \
+            pguser="${PGUSER:-}" \
+            pgpassword="${PGPASSWORD:-}" \
+          --output none
+
+    - name: Build/push/deploy pretiler
+      if: inputs.deploy-pretiler == 'true'
+      shell: bash
+      working-directory: ./unbl-geoanalytics
+      run: |
+        set -euo pipefail
+        ACR_NAME="${{ steps.names.outputs.acr }}"
+        docker_server="$(az acr show --name "$ACR_NAME" --query loginServer --output tsv)"
+        az acr login --name "$ACR_NAME" >/dev/null
+
+        docker build --platform linux/amd64 -t "${ACR_NAME}/pretiler:latest" pretiler/
+        docker tag "${ACR_NAME}/pretiler:latest" "$docker_server/pretiler:latest"
+        docker push "$docker_server/pretiler:latest"
+
+        az deployment group create \
+          --resource-group "${{ steps.names.outputs.rg }}" \
+          --template-file pretiler/template.json \
+          --name pretiler \
+          --mode Incremental \
+          --parameters \
+            storage_account_name="${{ steps.names.outputs.storage }}" \
+            container_environment_name="${{ steps.names.outputs.container_env }}" \
+            container_registry_name="$ACR_NAME" \
+            image_name="pretiler:latest" \
+            function_app_name="unbl-pretiler-${{ steps.names.outputs.env_short }}" \
+            location="${{ inputs.location }}" \
+            azure_raster_storage_connection_string="${RASTER_STORAGE_CONNECTION_STRING:-}" \
+            titiler_url="${TITILER_URL:-}" \
+            stac_server_url="${STAC_SERVER_URL:-}" \
+          --output none
+
+    - name: Build/push/deploy exactextract
+      if: inputs.deploy-exactextract == 'true'
+      shell: bash
+      working-directory: ./unbl-geoanalytics
+      run: |
+        set -euo pipefail
+        ACR_NAME="${{ steps.names.outputs.acr }}"
+        docker_server="$(az acr show --name "$ACR_NAME" --query loginServer --output tsv)"
+        az acr login --name "$ACR_NAME" >/dev/null
+
+        docker build --platform linux/amd64 -t "${ACR_NAME}/zonal-metrics-exact-extract:latest" exactextract/
+        docker tag "${ACR_NAME}/zonal-metrics-exact-extract:latest" "$docker_server/zonal-metrics-exact-extract:latest"
+        docker push "$docker_server/zonal-metrics-exact-extract:latest"
+
+        az deployment group create \
+          --resource-group "${{ steps.names.outputs.rg }}" \
+          --template-file exactextract/template.json \
+          --name exactextract \
+          --mode Incremental \
+          --parameters \
+            storage_account_name="${{ steps.names.outputs.storage }}" \
+            container_environment_name="${{ steps.names.outputs.container_env }}" \
+            container_registry_name="$ACR_NAME" \
+            image_name="zonal-metrics-exact-extract:latest" \
+            function_app_name="unbl-zonal-metrics-exact-${{ steps.names.outputs.env_short }}" \
+            location="${{ inputs.location }}" \
+            queue_name="zonal-metrics-exact-extract-queue" \
+            stac_server_url="${STAC_SERVER_URL:-}" \
+            azure_raster_storage_connection_string="${RASTER_STORAGE_CONNECTION_STRING:-}" \
+          --output none
+
+    - name: Logout of Azure
+      shell: bash
+      run: az logout || true
+
+    - name: Set deployment result
+      id: deploy-result
+      shell: bash
+      run: |
+        set -euo pipefail
+        END_TIME=$(date +%s)
+        DURATION=$((END_TIME - ${{ steps.start.outputs.start_time }}))
+        echo "status=success" >> "$GITHUB_OUTPUT"
+        echo "duration=$DURATION" >> "$GITHUB_OUTPUT"
+        echo "resource_group=${{ steps.names.outputs.rg }}" >> "$GITHUB_OUTPUT"
+        echo "acr_name=${{ steps.names.outputs.acr }}" >> "$GITHUB_OUTPUT"
+
+
