@@ -20,7 +20,7 @@ inputs:
   prefix:
     description: 'Resource naming prefix (default: unbl)'
     required: false
-    default: 'unbl'
+    default: 'new-unbl'
   resource-group-name:
     description: 'Resource group name (default: <prefix>-<env>-pgstac-rg)'
     required: false
