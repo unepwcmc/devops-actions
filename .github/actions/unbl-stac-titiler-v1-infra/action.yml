@@ -1,4 +1,4 @@
-name: 'New UNBL STAC TiTiler v1 Infra'
+name: 'UNBL STAC TiTiler v1 Infra'
 description: 'Provision UNBL STAC + TiTiler (pgSTAC) Azure infrastructure via Bicep (no image build/push)'
 author: 'WCMC DevOps Team'
 
@@ -122,10 +122,6 @@ runs:
       with:
         creds: ${{ inputs.azure-credentials }}
 
-    - name: Azure CLI version
-      shell: bash
-      run: az --version
-
     - name: Compute names / normalize environment
       id: names
       shell: bash
@@ -143,13 +139,7 @@ runs:
           *) ENV_BICEP="$ENV_IN" ;;
         esac
 
-        # Prefix all resource names with "new-" for now.
-        # Example: prefix=unbl -> new-unbl
-        PREFIX_RAW="${{ inputs.prefix }}"
-        case "$PREFIX_RAW" in
-          new-*) PREFIX="$PREFIX_RAW" ;;
-          *) PREFIX="new-${PREFIX_RAW}" ;;
-        esac
+        PREFIX="${{ inputs.prefix }}"
         RG_IN="${{ inputs.resource-group-name }}"
         if [ -z "$RG_IN" ]; then
           RG="${PREFIX}-${ENV_BICEP}-pgstac-rg"
@@ -175,7 +165,6 @@ runs:
 
         DEPLOY_NAME="pgstac-acr-setup-$(date +%Y%m%d-%H%M%S)"
 
-        set +e
         az deployment sub create \
           --location "$LOCATION" \
           --name "$DEPLOY_NAME" \
@@ -186,23 +175,6 @@ runs:
             prefix="$PREFIX" \
             resourceGroupName="$RG" \
           --output none
-        exit_code=$?
-        set -e
-
-        if [ $exit_code -ne 0 ]; then
-          echo "ACR setup deployment failed: $DEPLOY_NAME" >&2
-          echo "Failed operations (subscription deployment):" >&2
-          az deployment operation sub list \
-            --name "$DEPLOY_NAME" \
-            --query "[?properties.provisioningState=='Failed'].properties.statusMessage" \
-            -o json || true
-          echo "Deployment error summary:" >&2
-          az deployment sub show \
-            --name "$DEPLOY_NAME" \
-            --query "properties.error" \
-            -o json || true
-          exit $exit_code
-        fi
 
         ACR_NAME="$(az deployment sub show --name "$DEPLOY_NAME" --query "properties.outputs.acrName.value" -o tsv)"
         ACR_LOGIN_SERVER="$(az deployment sub show --name "$DEPLOY_NAME" --query "properties.outputs.acrLoginServer.value" -o tsv)"
@@ -233,12 +205,9 @@ runs:
 
         DEPLOY_NAME="pgstac-main-$(date +%Y%m%d-%H%M%S)"
 
-        # Build parameters:
-        # - Start from the repo's parameters file (pgstac.json) for non-secret defaults
-        # - Override environment/location/prefix/resourceGroupName (and any secrets) from inputs
+        # Use the repo's parameters file for non-secret defaults, and override only what we must.
         PARAM_ARGS=()
         PARAM_ARGS+=(--parameters "@./azure/bicep/parameters/pgstac.json")
-
         PARAM_ARGS+=(--parameters "location=$LOCATION")
         PARAM_ARGS+=(--parameters "environment=$ENV_BICEP")
         PARAM_ARGS+=(--parameters "prefix=$PREFIX")
@@ -246,80 +215,45 @@ runs:
         PARAM_ARGS+=(--parameters "acrName=$ACR_NAME")
         PARAM_ARGS+=(--parameters "acrLoginServer=$ACR_LOGIN_SERVER")
 
-        # Required secrets (must not live in pgstac.json)
+        # Required secrets (must not remain as PLACEHOLDER_* from pgstac.json)
         PARAM_ARGS+=(--parameters "postgresAdminPassword=${{ inputs.postgres-admin-password }}")
         PARAM_ARGS+=(--parameters "stacApiProxyApiKey=${{ inputs.stac-api-proxy-api-key }}")
 
-        # Ensure optional secret-like values do not remain as placeholders from pgstac.json
-        PARAM_ARGS+=(--parameters "postgresReadOnlyPassword=${{ inputs.postgres-read-only-password }}")
-        PARAM_ARGS+=(--parameters "azureStorageConnectionString=${{ inputs.azure-storage-connection-string }}")
-
-        # If provided, override office IP; otherwise use pgstac.json value.
+        # Optional overrides (only apply if provided)
         if [ -n "${{ inputs.office-ip-address }}" ]; then
           PARAM_ARGS+=(--parameters "officeIpAddress=${{ inputs.office-ip-address }}")
         fi
-
-        # Non-secret config: only override if caller provided something other than defaults
+        if [ -n "${{ inputs.postgres-read-only-password }}" ]; then
+          PARAM_ARGS+=(--parameters "postgresReadOnlyPassword=${{ inputs.postgres-read-only-password }}")
+        fi
+        if [ -n "${{ inputs.azure-storage-connection-string }}" ]; then
+          PARAM_ARGS+=(--parameters "azureStorageConnectionString=${{ inputs.azure-storage-connection-string }}")
+        fi
+        if [ -n "${{ inputs.stac-browser-custom-domain }}" ]; then
+          PARAM_ARGS+=(--parameters "stacBrowserCustomDomain=${{ inputs.stac-browser-custom-domain }}")
+        fi
         if [ -n "${{ inputs.postgres-database-name }}" ] && [ "${{ inputs.postgres-database-name }}" != "pgstac" ]; then
           PARAM_ARGS+=(--parameters "postgresDatabaseName=${{ inputs.postgres-database-name }}")
         fi
 
-        if [ -n "${{ inputs.stac-browser-custom-domain }}" ]; then
-          PARAM_ARGS+=(--parameters "stacBrowserCustomDomain=${{ inputs.stac-browser-custom-domain }}")
-        fi
-
+        # Optional JSON arrays (only override if caller passes something other than default [])
         STAC_IPS='${{ inputs.stac-whitelisted-ips }}'
         if [ -n "$STAC_IPS" ] && [ "$STAC_IPS" != "[]" ]; then
           jq -e 'type=="array"' >/dev/null <<<"$STAC_IPS"
           PARAM_ARGS+=(--parameters "stacWhitelistedIps=$STAC_IPS")
         fi
-
         TITILER_CORS='${{ inputs.titiler-cors-origins }}'
         if [ -n "$TITILER_CORS" ] && [ "$TITILER_CORS" != "[]" ]; then
           jq -e 'type=="array"' >/dev/null <<<"$TITILER_CORS"
           PARAM_ARGS+=(--parameters "titilerCorsOrigins=$TITILER_CORS")
         fi
 
-        set +e
         az deployment sub create \
           --location "$LOCATION" \
           --name "$DEPLOY_NAME" \
           --template-file ./azure/bicep/main-pgstac.bicep \
           "${PARAM_ARGS[@]}" \
           --output none
-        exit_code=$?
-        set -e
-
-        if [ $exit_code -ne 0 ]; then
-          echo "pgSTAC main deployment failed: $DEPLOY_NAME" >&2
-          echo "Failed operations (subscription deployment):" >&2
-          az deployment operation sub list \
-            --name "$DEPLOY_NAME" \
-            --query "[?properties.provisioningState=='Failed'].properties.statusMessage" \
-            -o json || true
-          echo "Deployment error summary:" >&2
-          az deployment sub show \
-            --name "$DEPLOY_NAME" \
-            --query "properties.error" \
-            -o json || true
-
-          # The Bicep uses a module named 'pgstac' scoped to the resource group,
-          # which becomes a nested resource-group deployment called 'pgstac'.
-          echo "Failed operations (resource-group nested deployment: pgstac):" >&2
-          az deployment operation group list \
-            --resource-group "$RG" \
-            --name "pgstac" \
-            --query "[?properties.provisioningState=='Failed'].properties.statusMessage" \
-            -o json || true
-          echo "Nested deployment error summary:" >&2
-          az deployment group show \
-            --resource-group "$RG" \
-            --name "pgstac" \
-            --query "properties.error" \
-            -o json || true
-
-          exit $exit_code
-        fi
 
         echo "deployment_name=$DEPLOY_NAME" >> "$GITHUB_OUTPUT"
 
