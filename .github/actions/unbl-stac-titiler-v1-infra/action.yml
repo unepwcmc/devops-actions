@@ -171,6 +171,7 @@ runs:
 
         DEPLOY_NAME="pgstac-acr-setup-$(date +%Y%m%d-%H%M%S)"
 
+        set +e
         az deployment sub create \
           --location "$LOCATION" \
           --name "$DEPLOY_NAME" \
@@ -181,6 +182,18 @@ runs:
             prefix="$PREFIX" \
             resourceGroupName="$RG" \
           --output none
+        exit_code=$?
+        set -e
+
+        if [ $exit_code -ne 0 ]; then
+          echo "ACR setup deployment failed: $DEPLOY_NAME" >&2
+          echo "Failed operations (subscription deployment):" >&2
+          az deployment sub operation list \
+            --name "$DEPLOY_NAME" \
+            --query "[?properties.provisioningState=='Failed'].properties.statusMessage" \
+            -o json || true
+          exit $exit_code
+        fi
 
         ACR_NAME="$(az deployment sub show --name "$DEPLOY_NAME" --query "properties.outputs.acrName.value" -o tsv)"
         ACR_LOGIN_SERVER="$(az deployment sub show --name "$DEPLOY_NAME" --query "properties.outputs.acrLoginServer.value" -o tsv)"
@@ -258,12 +271,35 @@ runs:
           PARAM_ARGS+=(--parameters "titilerCorsOrigins=$TITILER_CORS")
         fi
 
+        set +e
         az deployment sub create \
           --location "$LOCATION" \
           --name "$DEPLOY_NAME" \
           --template-file ./azure/bicep/main-pgstac.bicep \
           "${PARAM_ARGS[@]}" \
           --output none
+        exit_code=$?
+        set -e
+
+        if [ $exit_code -ne 0 ]; then
+          echo "pgSTAC main deployment failed: $DEPLOY_NAME" >&2
+          echo "Failed operations (subscription deployment):" >&2
+          az deployment sub operation list \
+            --name "$DEPLOY_NAME" \
+            --query "[?properties.provisioningState=='Failed'].properties.statusMessage" \
+            -o json || true
+
+          # The Bicep uses a module named 'pgstac' scoped to the resource group,
+          # which becomes a nested resource-group deployment called 'pgstac'.
+          echo "Failed operations (resource-group nested deployment: pgstac):" >&2
+          az deployment group operation list \
+            --resource-group "$RG" \
+            --name "pgstac" \
+            --query "[?properties.provisioningState=='Failed'].properties.statusMessage" \
+            -o json || true
+
+          exit $exit_code
+        fi
 
         echo "deployment_name=$DEPLOY_NAME" >> "$GITHUB_OUTPUT"
 
