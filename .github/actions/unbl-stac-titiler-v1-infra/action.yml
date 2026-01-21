@@ -1,0 +1,311 @@
+name: 'New UNBL STAC TiTiler v1 Infra'
+description: 'Provision UNBL STAC + TiTiler (pgSTAC) Azure infrastructure via Bicep (no image build/push)'
+author: 'WCMC DevOps Team'
+
+inputs:
+  environment:
+    description: 'Deployment environment (staging, prod, production)'
+    required: true
+  azure-credentials:
+    description: 'Azure service principal credentials (JSON)'
+    required: true
+  stac-titiler-ref:
+    description: 'Branch/tag to checkout from unbl-stac-titiler'
+    required: false
+    default: 'main'
+  location:
+    description: 'Azure region (e.g. uksouth)'
+    required: false
+    default: 'uksouth'
+  prefix:
+    description: 'Resource naming prefix (default: unbl)'
+    required: false
+    default: 'unbl'
+  resource-group-name:
+    description: 'Resource group name (default: <prefix>-<env>-pgstac-rg)'
+    required: false
+    default: ''
+
+  # Required for pgSTAC infra
+  office-ip-address:
+    description: 'IP address to allow on PostgreSQL firewall (e.g. WCMC office IP)'
+    required: false
+    default: ''
+  postgres-admin-password:
+    description: 'PostgreSQL admin password'
+    required: true
+  postgres-database-name:
+    description: 'PostgreSQL database name (default: pgstac)'
+    required: false
+    default: 'pgstac'
+  stac-api-proxy-api-key:
+    description: 'API key for STAC API Proxy authentication'
+    required: true
+
+  # Optional (pass empty to skip)
+  postgres-read-only-password:
+    description: 'Optional: PostgreSQL read-only user password (pgstac_read)'
+    required: false
+    default: ''
+  azure-storage-connection-string:
+    description: 'Optional: Azure Storage connection string for TiTiler /vsiaz/ access'
+    required: false
+    default: ''
+  stac-browser-custom-domain:
+    description: 'Optional: custom domain (prod only) for STAC Browser (e.g. stac.example.org)'
+    required: false
+    default: ''
+
+  # Optional JSON arrays (must be valid JSON arrays, e.g. ["1.2.3.4"])
+  stac-whitelisted-ips:
+    description: 'Optional: JSON array of extra IPs to whitelist for PostgreSQL (e.g. ["1.2.3.4"])'
+    required: false
+    default: '[]'
+  titiler-cors-origins:
+    description: 'Optional: JSON array of allowed CORS origins for TiTiler'
+    required: false
+    default: '[]'
+
+outputs:
+  deployment-status:
+    description: 'Status of the provisioning operation'
+    value: ${{ steps.result.outputs.status }}
+  deployment-duration:
+    description: 'Duration of the provisioning operation in seconds'
+    value: ${{ steps.result.outputs.duration }}
+  resource-group:
+    description: 'Resource group used for provisioning'
+    value: ${{ steps.outputs.outputs.resource_group }}
+  acr-name:
+    description: 'ACR name created/used'
+    value: ${{ steps.outputs.outputs.acr_name }}
+  acr-login-server:
+    description: 'ACR login server'
+    value: ${{ steps.outputs.outputs.acr_login_server }}
+  key-vault-name:
+    description: 'Key Vault name created'
+    value: ${{ steps.outputs.outputs.key_vault_name }}
+  postgres-endpoint:
+    description: 'PostgreSQL server FQDN'
+    value: ${{ steps.outputs.outputs.postgres_endpoint }}
+  stac-api-url:
+    description: 'STAC API backend URL'
+    value: ${{ steps.outputs.outputs.stac_api_url }}
+  stac-api-proxy-url:
+    description: 'STAC API Proxy URL'
+    value: ${{ steps.outputs.outputs.stac_api_proxy_url }}
+  titiler-url:
+    description: 'TiTiler URL'
+    value: ${{ steps.outputs.outputs.titiler_url }}
+  stac-browser-url:
+    description: 'STAC Browser URL'
+    value: ${{ steps.outputs.outputs.stac_browser_url }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Start timing
+      id: start
+      shell: bash
+      run: echo "start_time=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+    - name: Checkout unbl-stac-titiler repo
+      uses: actions/checkout@v4
+      with:
+        repository: unepwcmc/unbl-stac-titiler
+        ref: ${{ inputs.stac-titiler-ref }}
+        path: ./unbl-stac-titiler
+        token: ${{ env.GH_TOKEN }}
+
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ inputs.azure-credentials }}
+
+    - name: Compute names / normalize environment
+      id: names
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        # Normalize env for bicep:
+        # - production -> prod (bicep checks for 'prod')
+        # - staging stays staging
+        ENV_IN="${{ inputs.environment }}"
+        case "$ENV_IN" in
+          production) ENV_BICEP="prod" ;;
+          prod) ENV_BICEP="prod" ;;
+          staging) ENV_BICEP="staging" ;;
+          *) ENV_BICEP="$ENV_IN" ;;
+        esac
+
+        # Prefix all resource names with "new-" for now.
+        # Example: prefix=unbl -> new-unbl
+        PREFIX_RAW="${{ inputs.prefix }}"
+        case "$PREFIX_RAW" in
+          new-*) PREFIX="$PREFIX_RAW" ;;
+          *) PREFIX="new-${PREFIX_RAW}" ;;
+        esac
+        RG_IN="${{ inputs.resource-group-name }}"
+        if [ -z "$RG_IN" ]; then
+          RG="${PREFIX}-${ENV_BICEP}-pgstac-rg"
+        else
+          RG="$RG_IN"
+        fi
+
+        echo "env_bicep=$ENV_BICEP" >> "$GITHUB_OUTPUT"
+        echo "rg=$RG" >> "$GITHUB_OUTPUT"
+        echo "prefix=$PREFIX" >> "$GITHUB_OUTPUT"
+
+    - name: Provision RG + ACR (subscription deployment)
+      id: acr
+      shell: bash
+      working-directory: ./unbl-stac-titiler
+      run: |
+        set -euo pipefail
+
+        LOCATION="${{ inputs.location }}"
+        ENV_BICEP="${{ steps.names.outputs.env_bicep }}"
+        PREFIX="${{ steps.names.outputs.prefix }}"
+        RG="${{ steps.names.outputs.rg }}"
+
+        DEPLOY_NAME="pgstac-acr-setup-$(date +%Y%m%d-%H%M%S)"
+
+        az deployment sub create \
+          --location "$LOCATION" \
+          --name "$DEPLOY_NAME" \
+          --template-file ./azure/bicep/setup-acr.bicep \
+          --parameters \
+            location="$LOCATION" \
+            environment="$ENV_BICEP" \
+            prefix="$PREFIX" \
+            resourceGroupName="$RG" \
+          --output none
+
+        ACR_NAME="$(az deployment sub show --name "$DEPLOY_NAME" --query "properties.outputs.acrName.value" -o tsv)"
+        ACR_LOGIN_SERVER="$(az deployment sub show --name "$DEPLOY_NAME" --query "properties.outputs.acrLoginServer.value" -o tsv)"
+
+        if [ -z "$ACR_NAME" ] || [ -z "$ACR_LOGIN_SERVER" ]; then
+          echo "Failed to read ACR outputs from deployment: $DEPLOY_NAME" >&2
+          exit 1
+        fi
+
+        echo "deployment_name=$DEPLOY_NAME" >> "$GITHUB_OUTPUT"
+        echo "acr_name=$ACR_NAME" >> "$GITHUB_OUTPUT"
+        echo "acr_login_server=$ACR_LOGIN_SERVER" >> "$GITHUB_OUTPUT"
+
+    - name: Provision pgSTAC infra (Key Vault, MI, Postgres, App Services)
+      id: pgstac
+      shell: bash
+      working-directory: ./unbl-stac-titiler
+      run: |
+        set -euo pipefail
+
+        LOCATION="${{ inputs.location }}"
+        ENV_BICEP="${{ steps.names.outputs.env_bicep }}"
+        PREFIX="${{ steps.names.outputs.prefix }}"
+        RG="${{ steps.names.outputs.rg }}"
+
+        ACR_NAME="${{ steps.acr.outputs.acr_name }}"
+        ACR_LOGIN_SERVER="${{ steps.acr.outputs.acr_login_server }}"
+
+        DEPLOY_NAME="pgstac-main-$(date +%Y%m%d-%H%M%S)"
+
+        # Build parameters:
+        # - Start from the repo's parameters file (pgstac.json) for non-secret defaults
+        # - Override environment/location/prefix/resourceGroupName (and any secrets) from inputs
+        PARAM_ARGS=()
+        PARAM_ARGS+=(--parameters "@./azure/bicep/parameters/pgstac.json")
+
+        PARAM_ARGS+=(--parameters "location=$LOCATION")
+        PARAM_ARGS+=(--parameters "environment=$ENV_BICEP")
+        PARAM_ARGS+=(--parameters "prefix=$PREFIX")
+        PARAM_ARGS+=(--parameters "resourceGroupName=$RG")
+        PARAM_ARGS+=(--parameters "acrName=$ACR_NAME")
+        PARAM_ARGS+=(--parameters "acrLoginServer=$ACR_LOGIN_SERVER")
+
+        # Required secrets (must not live in pgstac.json)
+        PARAM_ARGS+=(--parameters "postgresAdminPassword=${{ inputs.postgres-admin-password }}")
+        PARAM_ARGS+=(--parameters "stacApiProxyApiKey=${{ inputs.stac-api-proxy-api-key }}")
+
+        # Ensure optional secret-like values do not remain as placeholders from pgstac.json
+        PARAM_ARGS+=(--parameters "postgresReadOnlyPassword=${{ inputs.postgres-read-only-password }}")
+        PARAM_ARGS+=(--parameters "azureStorageConnectionString=${{ inputs.azure-storage-connection-string }}")
+
+        # If provided, override office IP; otherwise use pgstac.json value.
+        if [ -n "${{ inputs.office-ip-address }}" ]; then
+          PARAM_ARGS+=(--parameters "officeIpAddress=${{ inputs.office-ip-address }}")
+        fi
+
+        # Non-secret config: only override if caller provided something other than defaults
+        if [ -n "${{ inputs.postgres-database-name }}" ] && [ "${{ inputs.postgres-database-name }}" != "pgstac" ]; then
+          PARAM_ARGS+=(--parameters "postgresDatabaseName=${{ inputs.postgres-database-name }}")
+        fi
+
+        if [ -n "${{ inputs.stac-browser-custom-domain }}" ]; then
+          PARAM_ARGS+=(--parameters "stacBrowserCustomDomain=${{ inputs.stac-browser-custom-domain }}")
+        fi
+
+        STAC_IPS='${{ inputs.stac-whitelisted-ips }}'
+        if [ -n "$STAC_IPS" ] && [ "$STAC_IPS" != "[]" ]; then
+          jq -e 'type=="array"' >/dev/null <<<"$STAC_IPS"
+          PARAM_ARGS+=(--parameters "stacWhitelistedIps=$STAC_IPS")
+        fi
+
+        TITILER_CORS='${{ inputs.titiler-cors-origins }}'
+        if [ -n "$TITILER_CORS" ] && [ "$TITILER_CORS" != "[]" ]; then
+          jq -e 'type=="array"' >/dev/null <<<"$TITILER_CORS"
+          PARAM_ARGS+=(--parameters "titilerCorsOrigins=$TITILER_CORS")
+        fi
+
+        az deployment sub create \
+          --location "$LOCATION" \
+          --name "$DEPLOY_NAME" \
+          --template-file ./azure/bicep/main-pgstac.bicep \
+          "${PARAM_ARGS[@]}" \
+          --output none
+
+        echo "deployment_name=$DEPLOY_NAME" >> "$GITHUB_OUTPUT"
+
+    - name: Collect outputs
+      id: outputs
+      shell: bash
+      working-directory: ./unbl-stac-titiler
+      run: |
+        set -euo pipefail
+
+        DEPLOY_NAME="${{ steps.pgstac.outputs.deployment_name }}"
+
+        rg="$(az deployment sub show --name "$DEPLOY_NAME" --query "properties.outputs.resourceGroupName.value" -o tsv)"
+        kv="$(az deployment sub show --name "$DEPLOY_NAME" --query "properties.outputs.keyVaultName.value" -o tsv)"
+        pg="$(az deployment sub show --name "$DEPLOY_NAME" --query "properties.outputs.postgresEndpoint.value" -o tsv)"
+        stac_api="$(az deployment sub show --name "$DEPLOY_NAME" --query "properties.outputs.stacApiUrl.value" -o tsv)"
+        proxy="$(az deployment sub show --name "$DEPLOY_NAME" --query "properties.outputs.stacApiProxyUrl.value" -o tsv)"
+        titiler="$(az deployment sub show --name "$DEPLOY_NAME" --query "properties.outputs.titilerUrl.value" -o tsv)"
+        browser="$(az deployment sub show --name "$DEPLOY_NAME" --query "properties.outputs.stacBrowserUrl.value" -o tsv)"
+
+        echo "resource_group=$rg" >> "$GITHUB_OUTPUT"
+        echo "key_vault_name=$kv" >> "$GITHUB_OUTPUT"
+        echo "postgres_endpoint=$pg" >> "$GITHUB_OUTPUT"
+        echo "stac_api_url=$stac_api" >> "$GITHUB_OUTPUT"
+        echo "stac_api_proxy_url=$proxy" >> "$GITHUB_OUTPUT"
+        echo "titiler_url=$titiler" >> "$GITHUB_OUTPUT"
+        echo "stac_browser_url=$browser" >> "$GITHUB_OUTPUT"
+        echo "acr_name=${{ steps.acr.outputs.acr_name }}" >> "$GITHUB_OUTPUT"
+        echo "acr_login_server=${{ steps.acr.outputs.acr_login_server }}" >> "$GITHUB_OUTPUT"
+
+    - name: Logout of Azure
+      shell: bash
+      run: az logout || true
+
+    - name: Set result
+      id: result
+      shell: bash
+      run: |
+        set -euo pipefail
+        end_time=$(date +%s)
+        duration=$((end_time - ${{ steps.start.outputs.start_time }}))
+        echo "status=success" >> "$GITHUB_OUTPUT"
+        echo "duration=$duration" >> "$GITHUB_OUTPUT"
+
+
