@@ -26,11 +26,6 @@ inputs:
     required: false
     default: ''
 
-  # Required for pgSTAC infra
-  office-ip-address:
-    description: 'IP address to allow on PostgreSQL firewall (e.g. WCMC office IP)'
-    required: false
-    default: ''
   postgres-admin-password:
     description: 'PostgreSQL admin password'
     required: true
@@ -205,54 +200,40 @@ runs:
 
         DEPLOY_NAME="pgstac-main-$(date +%Y%m%d-%H%M%S)"
 
-        # Use the repo's parameters file for non-secret defaults, and override only what we must.
-        PARAM_ARGS=()
-        PARAM_ARGS+=(--parameters "@./azure/bicep/parameters/pgstac.json")
-        PARAM_ARGS+=(--parameters "location=$LOCATION")
-        PARAM_ARGS+=(--parameters "environment=$ENV_BICEP")
-        PARAM_ARGS+=(--parameters "prefix=$PREFIX")
-        PARAM_ARGS+=(--parameters "resourceGroupName=$RG")
-        PARAM_ARGS+=(--parameters "acrName=$ACR_NAME")
-        PARAM_ARGS+=(--parameters "acrLoginServer=$ACR_LOGIN_SERVER")
-
-        # Required secrets (must not remain as PLACEHOLDER_* from pgstac.json)
-        PARAM_ARGS+=(--parameters "postgresAdminPassword=${{ inputs.postgres-admin-password }}")
-        PARAM_ARGS+=(--parameters "stacApiProxyApiKey=${{ inputs.stac-api-proxy-api-key }}")
-
-        # Optional overrides (only apply if provided)
-        if [ -n "${{ inputs.office-ip-address }}" ]; then
-          PARAM_ARGS+=(--parameters "officeIpAddress=${{ inputs.office-ip-address }}")
-        fi
-        if [ -n "${{ inputs.postgres-read-only-password }}" ]; then
-          PARAM_ARGS+=(--parameters "postgresReadOnlyPassword=${{ inputs.postgres-read-only-password }}")
-        fi
-        if [ -n "${{ inputs.azure-storage-connection-string }}" ]; then
-          PARAM_ARGS+=(--parameters "azureStorageConnectionString=${{ inputs.azure-storage-connection-string }}")
-        fi
-        if [ -n "${{ inputs.stac-browser-custom-domain }}" ]; then
-          PARAM_ARGS+=(--parameters "stacBrowserCustomDomain=${{ inputs.stac-browser-custom-domain }}")
-        fi
-        if [ -n "${{ inputs.postgres-database-name }}" ] && [ "${{ inputs.postgres-database-name }}" != "pgstac" ]; then
-          PARAM_ARGS+=(--parameters "postgresDatabaseName=${{ inputs.postgres-database-name }}")
-        fi
-
-        # Optional JSON arrays (only override if caller passes something other than default [])
+        # Optional JSON arrays - validate shape quickly (must be JSON arrays)
         STAC_IPS='${{ inputs.stac-whitelisted-ips }}'
-        if [ -n "$STAC_IPS" ] && [ "$STAC_IPS" != "[]" ]; then
-          jq -e 'type=="array"' >/dev/null <<<"$STAC_IPS"
-          PARAM_ARGS+=(--parameters "stacWhitelistedIps=$STAC_IPS")
-        fi
         TITILER_CORS='${{ inputs.titiler-cors-origins }}'
-        if [ -n "$TITILER_CORS" ] && [ "$TITILER_CORS" != "[]" ]; then
-          jq -e 'type=="array"' >/dev/null <<<"$TITILER_CORS"
-          PARAM_ARGS+=(--parameters "titilerCorsOrigins=$TITILER_CORS")
+        jq -e 'type=="array"' >/dev/null <<<"$STAC_IPS"
+        jq -e 'type=="array"' >/dev/null <<<"$TITILER_CORS"
+
+        # Read office IP from the repo's parameters file (same approach as deploy-to-azure.sh)
+        PARAMETERS_FILE="./azure/bicep/parameters/pgstac.json"
+        OFFICE_IP="$(jq -r '.parameters.officeIpAddress.value // empty' "$PARAMETERS_FILE" 2>/dev/null)"
+        if [ -z "$OFFICE_IP" ] || [ "$OFFICE_IP" = "null" ]; then
+          echo "Missing officeIpAddress in $PARAMETERS_FILE (expected .parameters.officeIpAddress.value)" >&2
+          exit 1
         fi
 
         az deployment sub create \
           --location "$LOCATION" \
           --name "$DEPLOY_NAME" \
           --template-file ./azure/bicep/main-pgstac.bicep \
-          "${PARAM_ARGS[@]}" \
+          --parameters \
+            location="$LOCATION" \
+            environment="$ENV_BICEP" \
+            prefix="$PREFIX" \
+            resourceGroupName="$RG" \
+            officeIpAddress="$OFFICE_IP" \
+            postgresAdminPassword='${{ inputs.postgres-admin-password }}' \
+            postgresDatabaseName='${{ inputs.postgres-database-name }}' \
+            postgresReadOnlyPassword='${{ inputs.postgres-read-only-password }}' \
+            azureStorageConnectionString='${{ inputs.azure-storage-connection-string }}' \
+            stacApiProxyApiKey='${{ inputs.stac-api-proxy-api-key }}' \
+            stacBrowserCustomDomain='${{ inputs.stac-browser-custom-domain }}' \
+            stacWhitelistedIps="$STAC_IPS" \
+            titilerCorsOrigins="$TITILER_CORS" \
+            acrName="$ACR_NAME" \
+            acrLoginServer="$ACR_LOGIN_SERVER" \
           --output none
 
         echo "deployment_name=$DEPLOY_NAME" >> "$GITHUB_OUTPUT"
