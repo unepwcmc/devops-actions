@@ -12,7 +12,7 @@ inputs:
   stac-titiler-ref:
     description: 'Branch/tag to checkout from unbl-stac-titiler'
     required: false
-    default: 'main'
+    default: 'new-staging-deploy'
   location:
     description: 'Azure region (e.g. uksouth)'
     required: false
@@ -122,6 +122,10 @@ runs:
       with:
         creds: ${{ inputs.azure-credentials }}
 
+    - name: Azure CLI version
+      shell: bash
+      run: az --version
+
     - name: Compute names / normalize environment
       id: names
       shell: bash
@@ -188,9 +192,14 @@ runs:
         if [ $exit_code -ne 0 ]; then
           echo "ACR setup deployment failed: $DEPLOY_NAME" >&2
           echo "Failed operations (subscription deployment):" >&2
-          az deployment sub operation list \
+          az deployment operation sub list \
             --name "$DEPLOY_NAME" \
             --query "[?properties.provisioningState=='Failed'].properties.statusMessage" \
+            -o json || true
+          echo "Deployment error summary:" >&2
+          az deployment sub show \
+            --name "$DEPLOY_NAME" \
+            --query "properties.error" \
             -o json || true
           exit $exit_code
         fi
@@ -284,18 +293,29 @@ runs:
         if [ $exit_code -ne 0 ]; then
           echo "pgSTAC main deployment failed: $DEPLOY_NAME" >&2
           echo "Failed operations (subscription deployment):" >&2
-          az deployment sub operation list \
+          az deployment operation sub list \
             --name "$DEPLOY_NAME" \
             --query "[?properties.provisioningState=='Failed'].properties.statusMessage" \
+            -o json || true
+          echo "Deployment error summary:" >&2
+          az deployment sub show \
+            --name "$DEPLOY_NAME" \
+            --query "properties.error" \
             -o json || true
 
           # The Bicep uses a module named 'pgstac' scoped to the resource group,
           # which becomes a nested resource-group deployment called 'pgstac'.
           echo "Failed operations (resource-group nested deployment: pgstac):" >&2
-          az deployment group operation list \
+          az deployment operation group list \
             --resource-group "$RG" \
             --name "pgstac" \
             --query "[?properties.provisioningState=='Failed'].properties.statusMessage" \
+            -o json || true
+          echo "Nested deployment error summary:" >&2
+          az deployment group show \
+            --resource-group "$RG" \
+            --name "pgstac" \
+            --query "properties.error" \
             -o json || true
 
           exit $exit_code
