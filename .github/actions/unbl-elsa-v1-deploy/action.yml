@@ -65,18 +65,30 @@ runs:
         set -euo pipefail
 
         ENV_IN="${{ inputs.environment }}"
-        if [ "$ENV_IN" = "production" ]; then
-          ENV_SHORT="prod"
-        else
-          ENV_SHORT="$ENV_IN"
-        fi
+        # Normalize environment inputs.
+        # We treat "new-staging-deploy" as staging (branch name, not an environment tier).
+        case "$ENV_IN" in
+          production|prod)
+            ENV_SHORT="prod"
+            ;;
+          staging|new-staging-deploy)
+            ENV_SHORT="staging"
+            ;;
+          *)
+            ENV_SHORT="$ENV_IN"
+            ;;
+        esac
+
+        # ACR + Storage account names must be lowercase alphanumeric only.
+        # (No hyphens; keep it deterministic.)
+        ENV_SUFFIX_SAFE="$(echo "$ENV_SHORT" | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]')"
 
         echo "env_short=$ENV_SHORT" >> "$GITHUB_OUTPUT"
         echo "rg=unbl-elsa-${ENV_SHORT}-rg" >> "$GITHUB_OUTPUT"
-        echo "acr=unblelsaregistry${ENV_SHORT}" >> "$GITHUB_OUTPUT"
+        echo "acr=unblelsaregistry${ENV_SUFFIX_SAFE}" >> "$GITHUB_OUTPUT"
         echo "container_env=unbl-elsa-trigger-managed-env-${ENV_SHORT}" >> "$GITHUB_OUTPUT"
         echo "function_app=unbl-elsa-trigger-${ENV_SHORT}" >> "$GITHUB_OUTPUT"
-        echo "storage=unblelsatrigger${ENV_SHORT}" >> "$GITHUB_OUTPUT"
+        echo "storage=unblelsatrigger${ENV_SUFFIX_SAFE}" >> "$GITHUB_OUTPUT"
 
     - name: Create resource group (idempotent)
       shell: bash
