@@ -9,10 +9,14 @@ inputs:
   azure-credentials:
     description: 'Azure service principal credentials (JSON)'
     required: true
+  name-prefix:
+    description: 'Name prefix for resources (default: new-unbl-elsa)'
+    required: false
+    default: 'new-unbl-elsa'
   elsa-ref:
     description: 'Branch/tag to checkout from unbl-elsa'
     required: false
-    default: 'main'
+    default: 'new-staging-deploy'
   location:
     description: 'Azure region (e.g. uksouth)'
     required: false
@@ -79,16 +83,31 @@ runs:
             ;;
         esac
 
-        # ACR + Storage account names must be lowercase alphanumeric only.
-        # (No hyphens; keep it deterministic.)
-        ENV_SUFFIX_SAFE="$(echo "$ENV_SHORT" | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]')"
+        PREFIX_IN="${{ inputs.name-prefix }}"
+
+        # ACR + Storage account names must be lowercase alphanumeric only (no hyphens).
+        PREFIX_SAFE="$(echo "$PREFIX_IN" | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]')"
+
+        # Use a short suffix for storage accounts to stay under 24 chars.
+        # - staging -> stag
+        # - prod    -> prod
+        # - else    -> first 3 chars
+        if [ "$ENV_SHORT" = "staging" ]; then
+          ENV_SUFFIX_STORAGE="stag"
+        elif [ "$ENV_SHORT" = "prod" ]; then
+          ENV_SUFFIX_STORAGE="prod"
+        else
+          ENV_SUFFIX_STORAGE="$(echo "$ENV_SHORT" | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]' | cut -c1-3)"
+        fi
+
+        ENV_SUFFIX_ACR="$(echo "$ENV_SHORT" | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]')"
 
         echo "env_short=$ENV_SHORT" >> "$GITHUB_OUTPUT"
-        echo "rg=unbl-elsa-${ENV_SHORT}-rg" >> "$GITHUB_OUTPUT"
-        echo "acr=unblelsaregistry${ENV_SUFFIX_SAFE}" >> "$GITHUB_OUTPUT"
-        echo "container_env=unbl-elsa-trigger-managed-env-${ENV_SHORT}" >> "$GITHUB_OUTPUT"
-        echo "function_app=unbl-elsa-trigger-${ENV_SHORT}" >> "$GITHUB_OUTPUT"
-        echo "storage=unblelsatrigger${ENV_SUFFIX_SAFE}" >> "$GITHUB_OUTPUT"
+        echo "rg=${PREFIX_IN}-${ENV_SHORT}-rg" >> "$GITHUB_OUTPUT"
+        echo "acr=${PREFIX_SAFE}registry${ENV_SUFFIX_ACR}" >> "$GITHUB_OUTPUT"
+        echo "container_env=${PREFIX_IN}-trigger-managed-env-${ENV_SHORT}" >> "$GITHUB_OUTPUT"
+        echo "function_app=${PREFIX_IN}-trigger-${ENV_SHORT}" >> "$GITHUB_OUTPUT"
+        echo "storage=${PREFIX_SAFE}trigger${ENV_SUFFIX_STORAGE}" >> "$GITHUB_OUTPUT"
 
     - name: Create resource group (idempotent)
       shell: bash
