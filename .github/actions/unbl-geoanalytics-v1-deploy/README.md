@@ -46,14 +46,25 @@ The action reads these as environment variables:
 - `TITILER_URL`
 - `STAC_SERVER_URL`
 
+## Shared infra auto-skip behavior
+
+If `deploy-shared-infra: 'true'`, the action will first check whether the **shared infra already exists** in the target resource group:
+- Storage account (`storage` name computed by the action)
+- Azure Container Registry (`acr` name computed by the action)
+- Container Apps managed environment (`container_env` name computed by the action)
+
+If all three exist, the action **skips** the shared infra deployment step and proceeds to app deployment.
+
+If you request any app deployment (`deploy-stacman`, `deploy-pretiler`, `deploy-exactextract`) and the shared infra is missing, the action will **fail fast** with a clear error message.
+
 ## Usage Example
 
 ```yaml
 - name: Deploy Geoanalytics
-  uses: unepwcmc/devops-actions/.github/actions/unbl-geoanalytics-v1-deploy@main
+  uses: unepwcmc/devops-actions/.github/actions/unbl-geoanalytics-v1-deploy@v1
   with:
     environment: staging
-    azure-credentials: ${{ secrets.AZURE_CREDENTIALS }}
+    azure-credentials: ${{ secrets.AZURE_SP_UNBL }}
   env:
     GH_TOKEN: ${{ secrets.GH_TOKEN }}
     RASTER_STORAGE_CONNECTION_STRING: ${{ secrets.RASTER_STORAGE_CONNECTION_STRING }}
@@ -65,5 +76,9 @@ The action reads these as environment variables:
     TITILER_URL: ${{ secrets.TITILER_URL }}
     STAC_SERVER_URL: ${{ secrets.STAC_SERVER_URL }}
 ```
+
+## Notes
+
+- Shared infra is deployed from the geoanalytics repo using Bicep at `unbl-geoanalytics/azure/bicep/main.bicep`.
 
 

@@ -56,146 +56,31 @@ runs:
         ref: ${{ inputs.elsa-ref }}
         path: ./unbl-elsa
         token: ${{ env.GH_TOKEN }}
+        fetch-depth: 0
 
     - name: Azure Login
       uses: azure/login@v1
       with:
         creds: ${{ inputs.azure-credentials }}
 
-    - name: Compute names
-      id: names
+    - name: Deploy ELSA 
       shell: bash
       run: |
         set -euo pipefail
 
-        ENV_IN="${{ inputs.environment }}"
-        # Normalize environment inputs.
-        # We treat "new-staging-deploy" as staging (branch name, not an environment tier).
-        case "$ENV_IN" in
-          production|prod)
-            ENV_SHORT="prod"
-            ;;
-          staging|new-staging-deploy)
-            ENV_SHORT="staging"
-            ;;
-          *)
-            ENV_SHORT="$ENV_IN"
-            ;;
-        esac
-
-        PREFIX_IN="${{ inputs.name-prefix }}"
-
-        # ACR + Storage account names must be lowercase alphanumeric only (no hyphens).
-        PREFIX_SAFE="$(echo "$PREFIX_IN" | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]')"
-
-        # Use a short suffix for storage accounts to stay under 24 chars.
-        # - staging -> stag
-        # - prod    -> prod
-        # - else    -> first 3 chars
-        if [ "$ENV_SHORT" = "staging" ]; then
-          ENV_SUFFIX_STORAGE="stag"
-        elif [ "$ENV_SHORT" = "prod" ]; then
-          ENV_SUFFIX_STORAGE="prod"
-        else
-          ENV_SUFFIX_STORAGE="$(echo "$ENV_SHORT" | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]' | cut -c1-3)"
+        FLAGS=()
+        if [ "${{ inputs.build-elsa-r-image }}" != "true" ]; then
+          FLAGS+=( "--skip-elsa-r-image" )
+        fi
+        if [ "${{ inputs.build-trigger-image }}" != "true" ]; then
+          FLAGS+=( "--skip-trigger-image" )
         fi
 
-        ENV_SUFFIX_ACR="$(echo "$ENV_SHORT" | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]')"
-
-        echo "env_short=$ENV_SHORT" >> "$GITHUB_OUTPUT"
-        echo "rg=${PREFIX_IN}-${ENV_SHORT}-rg" >> "$GITHUB_OUTPUT"
-        echo "acr=${PREFIX_SAFE}registry${ENV_SUFFIX_ACR}" >> "$GITHUB_OUTPUT"
-        echo "container_env=${PREFIX_IN}-trigger-managed-env-${ENV_SHORT}" >> "$GITHUB_OUTPUT"
-        echo "function_app=${PREFIX_IN}-trigger-${ENV_SHORT}" >> "$GITHUB_OUTPUT"
-        echo "storage=${PREFIX_SAFE}trigger${ENV_SUFFIX_STORAGE}" >> "$GITHUB_OUTPUT"
-
-    - name: Create resource group (idempotent)
-      shell: bash
-      run: |
-        set -euo pipefail
-        RG="${{ steps.names.outputs.rg }}"
-        LOCATION="${{ inputs.location }}"
-        az group show --name "$RG" >/dev/null 2>&1 || az group create --name "$RG" --location "$LOCATION" --output none
-
-    - name: Deploy Azure Container Registry (idempotent)
-      uses: azure/arm-deploy@v1
-      with:
-        template: ./unbl-elsa/template.json
-        resourceGroupName: ${{ steps.names.outputs.rg }}
-        parameters: container_registry_name=${{ steps.names.outputs.acr }} location=${{ inputs.location }}
-        deploymentMode: Incremental
-
-    - name: Build and push ELSA images to ACR
-      shell: bash
-      working-directory: ./unbl-elsa
-      run: |
-        set -euo pipefail
-
-        ACR_NAME="${{ steps.names.outputs.acr }}"
-        docker_server="$(az acr show --name "$ACR_NAME" --query loginServer --output tsv)"
-        az acr login --name "$ACR_NAME" >/dev/null
-
-        if [ "${{ inputs.build-elsa-r-image }}" = "true" ]; then
-          mkdir -p ELSA
-          : > ELSA/gurobi.env
-          printf 'CLOUDACCESSID=%s\n' "${GUROBI_CLOUDACCESSID:-}" >> ELSA/gurobi.env
-          printf 'CLOUDSECRETKEY=%s\n' "${GUROBI_CLOUDSECRETKEY:-}" >> ELSA/gurobi.env
-          printf 'CLOUDPOOL=%s\n' "${GUROBI_CLOUDPOOL:-}" >> ELSA/gurobi.env
-
-          docker build --platform linux/amd64 -t "${ACR_NAME}/elsa_r:latest" ELSA/
-          docker tag "${ACR_NAME}/elsa_r:latest" "$docker_server/elsa_r:latest"
-          docker push "$docker_server/elsa_r:latest"
-        else
-          echo "Skipping ELSA R image build (build-elsa-r-image=false)"
-        fi
-
-        if [ "${{ inputs.build-trigger-image }}" = "true" ]; then
-          docker build --platform linux/amd64 -t "${ACR_NAME}/elsa_trigger:latest" queueTrigger/
-          docker tag "${ACR_NAME}/elsa_trigger:latest" "$docker_server/elsa_trigger:latest"
-          docker push "$docker_server/elsa_trigger:latest"
-        else
-          echo "Skipping trigger image build (build-trigger-image=false)"
-        fi
-
-    - name: Deploy ELSA trigger function app (idempotent)
-      shell: bash
-      working-directory: ./unbl-elsa
-      run: |
-        set -euo pipefail
-
-        RG="${{ steps.names.outputs.rg }}"
-        LOCATION="${{ inputs.location }}"
-
-        AZURE_CREDS='${{ inputs.azure-credentials }}'
-        AZURE_TENANT_ID="$(jq -r '.tenantId' <<<"$AZURE_CREDS")"
-        AZURE_CLIENT_ID="$(jq -r '.clientId' <<<"$AZURE_CREDS")"
-        AZURE_SUBSCRIPTION_ID="$(jq -r '.subscriptionId' <<<"$AZURE_CREDS")"
-        AZURE_CLIENT_SECRET="$(jq -r '.clientSecret' <<<"$AZURE_CREDS")"
-
-        az deployment group create \
-          --resource-group "$RG" \
-          --template-file queueTrigger/template.json \
-          --name elsaQueueTrigger \
-          --mode Incremental \
-          --parameters \
-            storage_account_name="${{ steps.names.outputs.storage }}" \
-            container_environment_name="${{ steps.names.outputs.container_env }}" \
-            container_registry_name="${{ steps.names.outputs.acr }}" \
-            image_name="elsa_trigger:latest" \
-            function_app_name="${{ steps.names.outputs.function_app }}" \
-            queue_name="elsa-queue" \
-            location="$LOCATION" \
-            elsa_r_image_name="elsa_r:latest" \
-            azure_raster_storage_account_name="${AZURE_RASTER_STORAGE_ACCOUNT_NAME:-}" \
-            azure_raster_storage_account_key="${AZURE_RASTER_STORAGE_ACCOUNT_KEY:-}" \
-            azure_elsa_inputs_file_share_name="${AZURE_ELSA_INPUTS_FILE_SHARE_NAME:-}" \
-            azure_elsa_results_storage_container="${AZURE_ELSA_RESULTS_STORAGE_CONTAINER:-}" \
-            azure_subscription_id="$AZURE_SUBSCRIPTION_ID" \
-            azure_tenant_id="$AZURE_TENANT_ID" \
-            azure_client_id="$AZURE_CLIENT_ID" \
-            azure_client_secret="$AZURE_CLIENT_SECRET" \
-            azure_resource_group="$RG" \
-          --output none
+        chmod +x ./unbl-elsa/azure/scripts/deploy-elsa.sh
+        ./unbl-elsa/azure/scripts/deploy-elsa.sh \
+          --environment "${{ inputs.environment }}" \
+          --location "${{ inputs.location }}" \
+          "${FLAGS[@]}"
 
     - name: Logout of Azure
       shell: bash
@@ -210,6 +95,8 @@ runs:
         DURATION=$((END_TIME - ${{ steps.start.outputs.start_time }}))
         echo "status=success" >> "$GITHUB_OUTPUT"
         echo "duration=$DURATION" >> "$GITHUB_OUTPUT"
-        echo "resource_group=${{ steps.names.outputs.rg }}" >> "$GITHUB_OUTPUT"
+        # Resource group name is defined in the unbl-elsa parameters file.
+        # Keep a stable output for callers without duplicating naming logic here.
+        echo "resource_group=" >> "$GITHUB_OUTPUT"
 
 
