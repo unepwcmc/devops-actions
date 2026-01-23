@@ -113,7 +113,9 @@ runs:
         DURATION=$((END_TIME - ${{ steps.start.outputs.start_time }}))
         echo "status=success" >> "$GITHUB_OUTPUT"
         echo "duration=$DURATION" >> "$GITHUB_OUTPUT"
-        echo "resource_group=${{ steps.names.outputs.rg }}" >> "$GITHUB_OUTPUT"
-        echo "acr_name=${{ steps.names.outputs.acr }}" >> "$GITHUB_OUTPUT"
+        # Resource names come from the repo parameters file and/or Azure state.
+        # Avoid duplicating naming logic here.
+        echo "resource_group=" >> "$GITHUB_OUTPUT"
+        echo "acr_name=" >> "$GITHUB_OUTPUT"
 
 
