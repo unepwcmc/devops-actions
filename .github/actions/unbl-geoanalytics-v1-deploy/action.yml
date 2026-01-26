@@ -69,36 +69,80 @@ runs:
       with:
         creds: ${{ inputs.azure-credentials }}
 
-    - name: Deploy geoanalytics (via repo script)
+    - name: Deploy geoanalytics services (per-service deployment)
       shell: bash
       run: |
         set -euo pipefail
 
-        FLAGS=()
-        # Infra deploy toggle
-        if [ "${{ inputs.deploy-shared-infra }}" != "true" ]; then
-          FLAGS+=( "--skip-infra" )
-        fi
-
-        # Service toggles
-        if [ "${{ inputs.deploy-stacman }}" != "true" ] && [ "${{ inputs.deploy-pretiler }}" != "true" ] && [ "${{ inputs.deploy-exactextract }}" != "true" ]; then
-          # Nothing to deploy; still allow infra-only runs
-          FLAGS+=( "--skip-apps" )
-        else
-          if [ "${{ inputs.deploy-stacman }}" != "true" ] && [ "${{ inputs.deploy-pretiler }}" != "true" ]; then
-            FLAGS+=( "--only-exactextract" )
-          elif [ "${{ inputs.deploy-stacman }}" != "true" ] && [ "${{ inputs.deploy-exactextract }}" != "true" ]; then
-            FLAGS+=( "--only-pretiler" )
-          elif [ "${{ inputs.deploy-pretiler }}" != "true" ] && [ "${{ inputs.deploy-exactextract }}" != "true" ]; then
-            FLAGS+=( "--only-stacman" )
+        # Deploy shared infrastructure if requested
+        if [ "${{ inputs.deploy-shared-infra }}" == "true" ]; then
+          echo "Deploying shared infrastructure..."
+          INFRA_BICEP="./unbl-geoanalytics/azure/bicep/shared-infra.bicep"
+          INFRA_PARAMS="./unbl-geoanalytics/azure/bicep/parameters/shared-infra.${{ inputs.environment }}.json"
+          
+          if [ ! -f "$INFRA_PARAMS" ]; then
+            echo "Warning: Parameters file not found: $INFRA_PARAMS"
+            echo "Using staging parameters as fallback"
+            INFRA_PARAMS="./unbl-geoanalytics/azure/bicep/parameters/shared-infra.staging.json"
           fi
+          
+          DEPLOYMENT_NAME="geoanalytics-infra-${{ inputs.environment }}-$(date +%Y%m%d%H%M%S)"
+          az deployment sub create \
+            --location "${{ inputs.location }}" \
+            --name "$DEPLOYMENT_NAME" \
+            --template-file "$INFRA_BICEP" \
+            --parameters @"$INFRA_PARAMS" \
+            --output none
+          echo "Shared infrastructure deployed"
         fi
 
-        chmod +x ./unbl-geoanalytics/azure/scripts/deploy-geoanalytics.sh
-        ./unbl-geoanalytics/azure/scripts/deploy-geoanalytics.sh \
-          --environment "${{ inputs.environment }}" \
-          --location "${{ inputs.location }}" \
-          "${FLAGS[@]}"
+        # Deploy stacman if requested
+        if [ "${{ inputs.deploy-stacman }}" == "true" ]; then
+          echo "Deploying stacman service..."
+          chmod +x ./unbl-geoanalytics/stacman/azure/scripts/deploy.sh
+          cd ./unbl-geoanalytics/stacman
+          SKIP_INFRA_FLAG=""
+          if [ "${{ inputs.deploy-shared-infra }}" != "true" ]; then
+            SKIP_INFRA_FLAG="--skip-infra"
+          fi
+          ./azure/scripts/deploy.sh \
+            --environment "${{ inputs.environment }}" \
+            --location "${{ inputs.location }}" \
+            $SKIP_INFRA_FLAG
+          cd ../..
+        fi
+
+        # Deploy pretiler if requested
+        if [ "${{ inputs.deploy-pretiler }}" == "true" ]; then
+          echo "Deploying pretiler service..."
+          chmod +x ./unbl-geoanalytics/pretiler/azure/scripts/deploy.sh
+          cd ./unbl-geoanalytics/pretiler
+          SKIP_INFRA_FLAG=""
+          if [ "${{ inputs.deploy-shared-infra }}" != "true" ]; then
+            SKIP_INFRA_FLAG="--skip-infra"
+          fi
+          ./azure/scripts/deploy.sh \
+            --environment "${{ inputs.environment }}" \
+            --location "${{ inputs.location }}" \
+            $SKIP_INFRA_FLAG
+          cd ../..
+        fi
+
+        # Deploy exactextract if requested
+        if [ "${{ inputs.deploy-exactextract }}" == "true" ]; then
+          echo "Deploying exactextract service..."
+          chmod +x ./unbl-geoanalytics/exactextract/azure/scripts/deploy.sh
+          cd ./unbl-geoanalytics/exactextract
+          SKIP_INFRA_FLAG=""
+          if [ "${{ inputs.deploy-shared-infra }}" != "true" ]; then
+            SKIP_INFRA_FLAG="--skip-infra"
+          fi
+          ./azure/scripts/deploy.sh \
+            --environment "${{ inputs.environment }}" \
+            --location "${{ inputs.location }}" \
+            $SKIP_INFRA_FLAG
+          cd ../..
+        fi
 
     - name: Logout of Azure
       shell: bash

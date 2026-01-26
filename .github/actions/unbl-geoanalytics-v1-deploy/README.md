@@ -1,11 +1,13 @@
 # UNBL Geoanalytics v1 Deploy Action
 
-Builds and deploys UNBL geoanalytics services to Azure:
-- Deploys/updates shared resources (storage + ACR + container environment)
-- Builds/pushes Docker images and deploys:
-  - `stacman:latest`
-  - `pretiler:latest`
-  - `zonal-metrics-exact-extract:latest`
+Builds and deploys UNBL geoanalytics services to Azure using per-service deployment:
+- Deploys/updates shared resources (storage + ACR + managed environment) via `azure/bicep/shared-infra.bicep`
+- Builds/pushes Docker images and deploys each service independently:
+  - `stacman:latest` (via `stacman/azure/scripts/deploy.sh`)
+  - `pretiler:latest` (via `pretiler/azure/scripts/deploy.sh`)
+  - `zonal-metrics-exact-extract:latest` (via `exactextract/azure/scripts/deploy.sh`)
+
+Each service deployment is isolated and won't affect other services.
 
 ## Inputs
 
@@ -46,16 +48,15 @@ The action reads these as environment variables:
 - `TITILER_URL`
 - `STAC_SERVER_URL`
 
-## Shared infra auto-skip behavior
+## Deployment Behavior
 
-If `deploy-shared-infra: 'true'`, the action will first check whether the **shared infra already exists** in the target resource group:
-- Storage account (`storage` name computed by the action)
-- Azure Container Registry (`acr` name computed by the action)
-- Container Apps managed environment (`container_env` name computed by the action)
+- **Shared Infrastructure**: Deployed via `azure/bicep/shared-infra.bicep` (idempotent - creates if missing, skips if exists)
+- **Service Deployments**: Each service is deployed independently using its own script:
+  - `stacman/azure/scripts/deploy.sh` - Deploys stacman resources
+  - `pretiler/azure/scripts/deploy.sh` - Deploys pretiler resources  
+  - `exactextract/azure/scripts/deploy.sh` - Deploys exactextract resources
 
-If all three exist, the action **skips** the shared infra deployment step and proceeds to app deployment.
-
-If you request any app deployment (`deploy-stacman`, `deploy-pretiler`, `deploy-exactextract`) and the shared infra is missing, the action will **fail fast** with a clear error message.
+Each service script automatically deploys shared infrastructure first (unless `--skip-infra` is used), then deploys its own resources. This ensures infrastructure exists before service deployment.
 
 ## Usage Example
 
@@ -79,6 +80,8 @@ If you request any app deployment (`deploy-stacman`, `deploy-pretiler`, `deploy-
 
 ## Notes
 
-- Shared infra is deployed from the geoanalytics repo using Bicep at `unbl-geoanalytics/azure/bicep/main.bicep`.
+- Shared infra is deployed from `unbl-geoanalytics/azure/bicep/shared-infra.bicep`
+- Each service has its own Bicep template and deployment script for independent deployment
+- Service deployments are isolated - deploying one service won't affect others
 
 
