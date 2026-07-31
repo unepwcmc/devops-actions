@@ -88,21 +88,28 @@ runs:
   steps:
     - name: Validate inputs
       shell: bash
+      env:
+        # Inputs are passed through the environment, never interpolated into the
+        # script body: `${{ }}` is expanded as text before bash parses the script,
+        # so any input reaching a run: block directly is a command injection sink.
+        NOTIFICATION_TYPE: ${{ inputs.notification-type }}
+        ACTION_TYPE: ${{ inputs.action-type }}
+        ENVIRONMENT: ${{ inputs.environment }}
       run: |
-        if [[ ! "${{ inputs.notification-type }}" =~ ^(started|success|failure|custom)$ ]]; then
+        if [[ ! "$NOTIFICATION_TYPE" =~ ^(started|success|failure|custom)$ ]]; then
           echo "Error: notification-type must be one of: started, success, failure, custom"
           exit 1
         fi
 
         # Convert action-type to lowercase for validation
-        action_type_lower=$(echo "${{ inputs.action-type }}" | tr '[:upper:]' '[:lower:]')
+        action_type_lower=$(echo "$ACTION_TYPE" | tr '[:upper:]' '[:lower:]')
         if [[ ! "$action_type_lower" =~ ^(deploy|setup|provision|test)$ ]]; then
           echo "Error: action-type must be one of: deploy, setup, provision, test (case insensitive)"
-          echo "Received: ${{ inputs.action-type }}"
+          echo "Received: $ACTION_TYPE"
           exit 1
         fi
 
-        if [[ ! "${{ inputs.environment }}" =~ ^(staging|production)$ ]]; then
+        if [[ ! "$ENVIRONMENT" =~ ^(staging|production)$ ]]; then
           echo "Error: environment must be either staging or production"
           exit 1
         fi
@@ -110,33 +117,48 @@ runs:
     - name: Set default values for empty variables
       shell: bash
       run: |
+        # Write NAME=VALUE to $GITHUB_ENV with any CR/LF stripped. A value carrying a
+        # newline would otherwise start a second NAME=VALUE line and let the caller
+        # define arbitrary environment variables for every later step.
+        write_env() {
+          printf '%s=%s\n' "$1" "$(printf '%s' "$2" | tr -d '\r\n')" >> "$GITHUB_ENV"
+        }
+
         # Set default values for empty environment variables to prevent JSON parsing errors
-        echo "START_TIME=${START_TIME:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}" >> $GITHUB_ENV
-        echo "END_TIME=${END_TIME:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}" >> $GITHUB_ENV
-        echo "DEPLOYMENT_DURATION=${DEPLOYMENT_DURATION:-'N/A'}" >> $GITHUB_ENV
-        echo "KAMAL_VERSION=${KAMAL_VERSION:-'N/A'}" >> $GITHUB_ENV
-        echo "CUSTOM_MESSAGE=${CUSTOM_MESSAGE:-''}" >> $GITHUB_ENV
-        
+        write_env START_TIME "${START_TIME:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
+        write_env END_TIME "${END_TIME:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
+        write_env DEPLOYMENT_DURATION "${DEPLOYMENT_DURATION:-'N/A'}"
+        write_env KAMAL_VERSION "${KAMAL_VERSION:-'N/A'}"
+        write_env CUSTOM_MESSAGE "${CUSTOM_MESSAGE:-''}"
+
         # Format ACTION_TYPE for better display (capitalize first letter)
-        action_type="${{ inputs.action-type }}"
-        formatted_action_type="$(echo ${action_type:0:1} | tr '[:lower:]' '[:upper:]')${action_type:1}"
-        echo "ACTION_TYPE=${formatted_action_type}" >> $GITHUB_ENV
-        
+        action_type="$ACTION_TYPE_INPUT"
+        formatted_action_type="$(echo "${action_type:0:1}" | tr '[:lower:]' '[:upper:]')${action_type:1}"
+        write_env ACTION_TYPE "$formatted_action_type"
+
         # Improve FAILURE_REASON if it's just 'failure'
-        failure_reason="${{ inputs.failure-reason }}"
+        failure_reason="$FAILURE_REASON_INPUT"
         if [[ "$failure_reason" == "failure" ]]; then
           failure_reason="GitHub Action failed - check logs for details"
         fi
-        echo "FAILURE_REASON=${failure_reason}" >> $GITHUB_ENV
+        write_env FAILURE_REASON "$failure_reason"
       env:
         START_TIME: ${{ inputs.start-time }}
         END_TIME: ${{ inputs.end-time }}
         DEPLOYMENT_DURATION: ${{ inputs.deployment-duration }}
         KAMAL_VERSION: ${{ inputs.kamal-version }}
         CUSTOM_MESSAGE: ${{ inputs.custom-message }}
+        ACTION_TYPE_INPUT: ${{ inputs.action-type }}
+        FAILURE_REASON_INPUT: ${{ inputs.failure-reason }}
 
     - name: Sanitize values for JSON
       shell: bash
+      env:
+        # commit-message is the highest-risk input: callers wire it to
+        # github.event.head_commit.message / github.event.release.name, both of
+        # which are attacker-controlled by anyone able to push a branch or cut a
+        # release. It must never be interpolated into the script body.
+        COMMIT_MESSAGE_INPUT: ${{ inputs.commit-message }}
       run: |
         # Use jq to JSON-escape values, then strip the surrounding quotes so they can be embedded in templates
         escape_for_template() {
@@ -147,17 +169,24 @@ runs:
           echo "${escaped:1:${#escaped}-2}"
         }
 
-        escaped_commit_message=$(escape_for_template "${{ inputs.commit-message }}")
-        echo "COMMIT_MESSAGE=${escaped_commit_message}" >> $GITHUB_ENV
+        # jq -Rsa emits a single line (literal newlines become \n), so these are
+        # already safe to write as one NAME=VALUE pair.
+        escaped_commit_message=$(escape_for_template "$COMMIT_MESSAGE_INPUT")
+        printf 'COMMIT_MESSAGE=%s\n' "$escaped_commit_message" >> "$GITHUB_ENV"
 
         escaped_failure_reason=$(escape_for_template "${FAILURE_REASON}")
-        echo "FAILURE_REASON=${escaped_failure_reason}" >> $GITHUB_ENV
+        printf 'FAILURE_REASON=%s\n' "$escaped_failure_reason" >> "$GITHUB_ENV"
 
     - name: Set notification template
       id: template
       shell: bash
+      env:
+        NOTIFICATION_TYPE: ${{ inputs.notification-type }}
       run: |
-        case "${{ inputs.notification-type }}" in
+        # Every branch writes a literal filename. This output is consumed as
+        # payload-file-path, so a caller-controlled value here would be a path
+        # traversal sink as well as a shell injection one.
+        case "$NOTIFICATION_TYPE" in
           "started")
             echo "template=github-deploy-slack-started.json" >> $GITHUB_OUTPUT
             ;;
@@ -168,7 +197,7 @@ runs:
             echo "template=github-deploy-slack-failure.json" >> $GITHUB_OUTPUT
             ;;
           "custom")
-            echo "template=github-slack-${{ inputs.notification-type }}.json" >> $GITHUB_OUTPUT
+            echo "template=github-slack-custom.json" >> $GITHUB_OUTPUT
             ;;
         esac
 
