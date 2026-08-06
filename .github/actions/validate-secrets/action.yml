@@ -32,8 +32,28 @@ runs:
       env:
         IN_SECRETS_FILE: ${{ inputs.secrets-file }}
       run: |
-        # Extract all variable names from secrets-common file
-        REQUIRED_VARS=$(grep -v '^#' "${IN_SECRETS_FILE}" | grep -v '^$' | cut -d'=' -f1)
+        # Extract the environment variables this secrets file depends on.
+        #
+        # Entries look like NAME=$SOURCE. NAME is what Kamal exposes to the
+        # container; $SOURCE is the variable that must exist in the environment.
+        # Usually they match, but they do not have to:
+        #
+        #   RAILS_MASTER_KEY=$RAILS_MASTER_KEY     -> needs RAILS_MASTER_KEY
+        #   MYSQL_PASSWORD=$WORDPRESS_DB_PASSWORD  -> needs WORDPRESS_DB_PASSWORD
+        #
+        # Reading the left-hand side would demand a MYSQL_PASSWORD secret that is
+        # not supposed to exist, so read the referenced variable instead.
+        # Lines with a literal value (no $) need nothing from the environment.
+        REQUIRED_VARS=$(
+          tr -d '\r' < "${IN_SECRETS_FILE}" \
+          | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+          | grep -v '^#' | grep -v '^$' | grep '=' \
+          | sed -e 's/^[^=]*=//' \
+          | grep '^\$' \
+          | grep -v '^\$(' \
+          | sed -e 's/^\${\([A-Za-z_][A-Za-z0-9_]*\).*/\1/' -e 's/^\$\([A-Za-z_][A-Za-z0-9_]*\).*/\1/' \
+          | sort -u
+        )
         echo "required_vars<<EOF" >> $GITHUB_OUTPUT
         echo "$REQUIRED_VARS" >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
