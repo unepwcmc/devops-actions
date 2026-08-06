@@ -65,21 +65,26 @@ runs:
 
     - name: Deploy ELSA 
       shell: bash
+      env:
+        IN_BUILD_ELSA_R_IMAGE: ${{ inputs.build-elsa-r-image }}
+        IN_BUILD_TRIGGER_IMAGE: ${{ inputs.build-trigger-image }}
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_LOCATION: ${{ inputs.location }}
       run: |
         set -euo pipefail
 
         FLAGS=()
-        if [ "${{ inputs.build-elsa-r-image }}" != "true" ]; then
+        if [ "${IN_BUILD_ELSA_R_IMAGE}" != "true" ]; then
           FLAGS+=( "--skip-elsa-r-image" )
         fi
-        if [ "${{ inputs.build-trigger-image }}" != "true" ]; then
+        if [ "${IN_BUILD_TRIGGER_IMAGE}" != "true" ]; then
           FLAGS+=( "--skip-trigger-image" )
         fi
 
         chmod +x ./unbl-elsa/azure/scripts/deploy-elsa.sh
         ./unbl-elsa/azure/scripts/deploy-elsa.sh \
-          --environment "${{ inputs.environment }}" \
-          --location "${{ inputs.location }}" \
+          --environment "${IN_ENVIRONMENT}" \
+          --location "${IN_LOCATION}" \
           "${FLAGS[@]}"
 
     - name: Logout of Azure

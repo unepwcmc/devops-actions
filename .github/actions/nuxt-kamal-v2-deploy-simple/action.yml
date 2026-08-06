@@ -58,24 +58,28 @@ runs:
   steps:
     - name: Validate inputs and environment
       shell: bash
+      env:
+        IN_DEPLOYMENT_STRATEGY: ${{ inputs.deployment-strategy }}
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_WORKING_DIRECTORY: ${{ inputs.working-directory }}
       run: |
         echo "🔍 Validating Nuxt Kamal v2 deployment (simplified)..."
 
         # Validate environment
-        if [[ ! "${{ inputs.environment }}" =~ ^(staging|production)$ ]]; then
+        if [[ ! "${IN_ENVIRONMENT}" =~ ^(staging|production)$ ]]; then
           echo "❌ Error: environment must be either 'staging' or 'production'"
           exit 1
         fi
 
         # Validate deployment strategy
-        if [[ ! "${{ inputs.deployment-strategy }}" =~ ^(rolling|blue-green|immediate)$ ]]; then
+        if [[ ! "${IN_DEPLOYMENT_STRATEGY}" =~ ^(rolling|blue-green|immediate)$ ]]; then
           echo "❌ Error: deployment-strategy must be one of: rolling, blue-green, immediate"
           exit 1
         fi
 
         # Validate working directory
-        if [[ ! -d "${{ inputs.working-directory }}" ]]; then
-          echo "❌ Error: working-directory '${{ inputs.working-directory }}' does not exist"
+        if [[ ! -d "${IN_WORKING_DIRECTORY}" ]]; then
+          echo "❌ Error: working-directory '${IN_WORKING_DIRECTORY}' does not exist"
           exit 1
         fi
 
@@ -83,6 +87,8 @@ runs:
 
     - name: Validate required environment variables
       shell: bash
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
         echo "🔧 Validating required environment variables..."
         
@@ -109,7 +115,7 @@ runs:
           echo "     uses: unepwcmc/devops-actions/.github/actions/validate-secrets@v1"
           echo "     with:"
           echo "       secrets-file: '.kamal/secrets-common'"
-          echo "       environment: '${{ inputs.environment }}'"
+          echo "       environment: '${IN_ENVIRONMENT}'"
           exit 1
         fi
 
@@ -137,9 +143,11 @@ runs:
 
     - name: Install Kamal
       shell: bash
+      env:
+        IN_KAMAL_VERSION: ${{ inputs.kamal-version }}
       run: |
-        echo "📦 Installing Kamal v${{ inputs.kamal-version }}..."
-        gem install kamal -v ${{ inputs.kamal-version }}
+        echo "📦 Installing Kamal v${IN_KAMAL_VERSION}..."
+        gem install kamal -v "${IN_KAMAL_VERSION}"
         kamal version
 
     - name: Setup SSH key
@@ -202,15 +210,18 @@ runs:
       id: deploy
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_DEPLOYMENT_STRATEGY: ${{ inputs.deployment-strategy }}
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
-        echo "🚀 Starting Kamal v2 deployment to ${{ inputs.environment }}..."
-        echo "📊 Deployment strategy: ${{ inputs.deployment-strategy }}"
+        echo "🚀 Starting Kamal v2 deployment to ${IN_ENVIRONMENT}..."
+        echo "📊 Deployment strategy: ${IN_DEPLOYMENT_STRATEGY}"
         
         # Set deployment environment
-        export KAMAL_ENV="${{ inputs.environment }}"
+        export KAMAL_ENV="${IN_ENVIRONMENT}"
         
         # Deploy based on strategy
-        case "${{ inputs.deployment-strategy }}" in
+        case "${IN_DEPLOYMENT_STRATEGY}" in
           "rolling")
             echo "🔄 Performing rolling deployment..."
             kamal deploy
@@ -224,7 +235,7 @@ runs:
             kamal deploy --skip-push
             ;;
           *)
-            echo "❌ Unknown deployment strategy: ${{ inputs.deployment-strategy }}"
+            echo "❌ Unknown deployment strategy: ${IN_DEPLOYMENT_STRATEGY}"
             exit 1
             ;;
         esac
@@ -235,6 +246,9 @@ runs:
       if: inputs.health-check-enabled == 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_HEALTH_CHECK_TIMEOUT: ${{ inputs.health-check-timeout }}
+        IN_ROLLBACK_ON_FAILURE: ${{ inputs.rollback-on-failure }}
       run: |
         echo "🏥 Running health checks..."
         
@@ -243,7 +257,7 @@ runs:
           echo "🔍 Checking application health..."
           
           # Simple health check - can be enhanced based on app requirements
-          timeout ${{ inputs.health-check-timeout }} bash -c '
+          timeout "${IN_HEALTH_CHECK_TIMEOUT}" bash -c '
             while true; do
               if kamal app logs --lines 5 | grep -q "listening\|ready\|started"; then
                 echo "✅ Application appears to be healthy"
@@ -253,8 +267,8 @@ runs:
               sleep 10
             done
           ' || {
-            echo "❌ Health check timeout after ${{ inputs.health-check-timeout }} seconds"
-            if [[ "${{ inputs.rollback-on-failure }}" == "true" ]]; then
+            echo "❌ Health check timeout after ${IN_HEALTH_CHECK_TIMEOUT} seconds"
+            if [[ "${IN_ROLLBACK_ON_FAILURE}" == "true" ]]; then
               echo "🔄 Initiating rollback..."
               kamal rollback
               echo "rollback-performed=true" >> $GITHUB_OUTPUT

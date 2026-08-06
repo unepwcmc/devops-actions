@@ -16,20 +16,24 @@ runs:
   steps:
     - name: Check if secrets-common exists
       shell: bash
+      env:
+        IN_SECRETS_FILE: ${{ inputs.secrets-file }}
       run: |
-        if [ ! -f "${{ inputs.secrets-file }}" ]; then
-          echo "::error::Secrets file not found at ${{ inputs.secrets-file }}"
+        if [ ! -f "${IN_SECRETS_FILE}" ]; then
+          echo "::error::Secrets file not found at ${IN_SECRETS_FILE}"
           echo "Please create the secrets file by copying the template:"
-          echo "cp .kamal/secrets-common.template ${{ inputs.secrets-file }}"
+          echo "cp .kamal/secrets-common.template ${IN_SECRETS_FILE}"
           exit 1
         fi
 
     - name: Extract required variables
       id: extract-vars
       shell: bash
+      env:
+        IN_SECRETS_FILE: ${{ inputs.secrets-file }}
       run: |
         # Extract all variable names from secrets-common file
-        REQUIRED_VARS=$(grep -v '^#' "${{ inputs.secrets-file }}" | grep -v '^$' | cut -d'=' -f1)
+        REQUIRED_VARS=$(grep -v '^#' "${IN_SECRETS_FILE}" | grep -v '^$' | cut -d'=' -f1)
         echo "required_vars<<EOF" >> $GITHUB_OUTPUT
         echo "$REQUIRED_VARS" >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
@@ -37,6 +41,9 @@ runs:
     - name: Validate environment variables
       id: validate-vars
       shell: bash
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_SECRETS_FILE: ${{ inputs.secrets-file }}
       run: |
         # Read required variables from previous step
         while IFS= read -r var; do
@@ -47,8 +54,8 @@ runs:
           # Check if the variable is set in GitHub secrets
           if [ -z "${!var}" ]; then
             echo "::error::Missing required secret: $var"
-            echo "Please add this secret to your GitHub environment (${{ inputs.environment }})"
-            echo "You can find the required format in ${{ inputs.secrets-file }}"
+            echo "Please add this secret to your GitHub environment (${IN_ENVIRONMENT})"
+            echo "You can find the required format in ${IN_SECRETS_FILE}"
             MISSING_VARS=true
           fi
         done <<< "${{ steps.extract-vars.outputs.required_vars }}"

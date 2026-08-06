@@ -120,13 +120,17 @@ runs:
     - name: Compute names / normalize environment
       id: names
       shell: bash
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_PREFIX: ${{ inputs.prefix }}
+        IN_RESOURCE_GROUP_NAME: ${{ inputs.resource-group-name }}
       run: |
         set -euo pipefail
 
         # Normalize env for bicep:
         # - production -> prod (bicep checks for 'prod')
         # - staging stays staging
-        ENV_IN="${{ inputs.environment }}"
+        ENV_IN="${IN_ENVIRONMENT}"
         case "$ENV_IN" in
           production) ENV_BICEP="prod" ;;
           prod) ENV_BICEP="prod" ;;
@@ -134,8 +138,8 @@ runs:
           *) ENV_BICEP="$ENV_IN" ;;
         esac
 
-        PREFIX="${{ inputs.prefix }}"
-        RG_IN="${{ inputs.resource-group-name }}"
+        PREFIX="${IN_PREFIX}"
+        RG_IN="${IN_RESOURCE_GROUP_NAME}"
         if [ -z "$RG_IN" ]; then
           RG="${PREFIX}-${ENV_BICEP}-pgstac-rg"
         else
@@ -150,10 +154,12 @@ runs:
       id: acr
       shell: bash
       working-directory: ./unbl-stac-titiler
+      env:
+        IN_LOCATION: ${{ inputs.location }}
       run: |
         set -euo pipefail
 
-        LOCATION="${{ inputs.location }}"
+        LOCATION="${IN_LOCATION}"
         ENV_BICEP="${{ steps.names.outputs.env_bicep }}"
         PREFIX="${{ steps.names.outputs.prefix }}"
         RG="${{ steps.names.outputs.rg }}"
@@ -187,10 +193,20 @@ runs:
       id: pgstac
       shell: bash
       working-directory: ./unbl-stac-titiler
+      env:
+        IN_AZURE_STORAGE_CONNECTION_STRING: ${{ inputs.azure-storage-connection-string }}
+        IN_LOCATION: ${{ inputs.location }}
+        IN_POSTGRES_ADMIN_PASSWORD: ${{ inputs.postgres-admin-password }}
+        IN_POSTGRES_DATABASE_NAME: ${{ inputs.postgres-database-name }}
+        IN_POSTGRES_READ_ONLY_PASSWORD: ${{ inputs.postgres-read-only-password }}
+        IN_STAC_API_PROXY_API_KEY: ${{ inputs.stac-api-proxy-api-key }}
+        IN_STAC_BROWSER_CUSTOM_DOMAIN: ${{ inputs.stac-browser-custom-domain }}
+        IN_STAC_WHITELISTED_IPS: ${{ inputs.stac-whitelisted-ips }}
+        IN_TITILER_CORS_ORIGINS: ${{ inputs.titiler-cors-origins }}
       run: |
         set -euo pipefail
 
-        LOCATION="${{ inputs.location }}"
+        LOCATION="${IN_LOCATION}"
         ENV_BICEP="${{ steps.names.outputs.env_bicep }}"
         PREFIX="${{ steps.names.outputs.prefix }}"
         RG="${{ steps.names.outputs.rg }}"
@@ -201,8 +217,8 @@ runs:
         DEPLOY_NAME="pgstac-main-$(date +%Y%m%d-%H%M%S)"
 
         # Optional JSON arrays - validate shape quickly (must be JSON arrays)
-        STAC_IPS='${{ inputs.stac-whitelisted-ips }}'
-        TITILER_CORS='${{ inputs.titiler-cors-origins }}'
+        STAC_IPS="${IN_STAC_WHITELISTED_IPS}"
+        TITILER_CORS="${IN_TITILER_CORS_ORIGINS}"
         jq -e 'type=="array"' >/dev/null <<<"$STAC_IPS"
         jq -e 'type=="array"' >/dev/null <<<"$TITILER_CORS"
 
@@ -224,12 +240,12 @@ runs:
             prefix="$PREFIX" \
             resourceGroupName="$RG" \
             officeIpAddress="$OFFICE_IP" \
-            postgresAdminPassword='${{ inputs.postgres-admin-password }}' \
-            postgresDatabaseName='${{ inputs.postgres-database-name }}' \
-            postgresReadOnlyPassword='${{ inputs.postgres-read-only-password }}' \
-            azureStorageConnectionString='${{ inputs.azure-storage-connection-string }}' \
-            stacApiProxyApiKey='${{ inputs.stac-api-proxy-api-key }}' \
-            stacBrowserCustomDomain='${{ inputs.stac-browser-custom-domain }}' \
+            postgresAdminPassword="${IN_POSTGRES_ADMIN_PASSWORD}" \
+            postgresDatabaseName="${IN_POSTGRES_DATABASE_NAME}" \
+            postgresReadOnlyPassword="${IN_POSTGRES_READ_ONLY_PASSWORD}" \
+            azureStorageConnectionString="${IN_AZURE_STORAGE_CONNECTION_STRING}" \
+            stacApiProxyApiKey="${IN_STAC_API_PROXY_API_KEY}" \
+            stacBrowserCustomDomain="${IN_STAC_BROWSER_CUSTOM_DOMAIN}" \
             stacWhitelistedIps="$STAC_IPS" \
             titilerCorsOrigins="$TITILER_CORS" \
             acrName="$ACR_NAME" \

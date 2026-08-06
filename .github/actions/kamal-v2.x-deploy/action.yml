@@ -45,24 +45,28 @@ runs:
   steps:
     - name: Validate inputs
       shell: bash
+      env:
+        IN_DEPLOYMENT_STRATEGY: ${{ inputs.deployment-strategy }}
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_WORKING_DIRECTORY: ${{ inputs.working-directory }}
       run: |
         echo "🔍 Validating deployment inputs..."
 
         # Validate environment
-        if [[ ! "${{ inputs.environment }}" =~ ^(staging|production)$ ]]; then
+        if [[ ! "${IN_ENVIRONMENT}" =~ ^(staging|production)$ ]]; then
           echo "❌ Error: environment must be either 'staging' or 'production'"
           exit 1
         fi
 
         # Validate deployment strategy
-        if [[ ! "${{ inputs.deployment-strategy }}" =~ ^(rolling|blue-green|immediate)$ ]]; then
+        if [[ ! "${IN_DEPLOYMENT_STRATEGY}" =~ ^(rolling|blue-green|immediate)$ ]]; then
           echo "❌ Error: deployment-strategy must be one of: rolling, blue-green, immediate"
           exit 1
         fi
 
         # Validate working directory exists
-        if [[ ! -d "${{ inputs.working-directory }}" ]]; then
-          echo "❌ Error: working-directory '${{ inputs.working-directory }}' does not exist"
+        if [[ ! -d "${IN_WORKING_DIRECTORY}" ]]; then
+          echo "❌ Error: working-directory '${IN_WORKING_DIRECTORY}' does not exist"
           exit 1
         fi
 
@@ -108,38 +112,44 @@ runs:
       if: inputs.pre-deploy-commands != ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_PRE_DEPLOY_COMMANDS: ${{ inputs.pre-deploy-commands }}
       run: |
         echo "🔧 Running pre-deploy commands..."
-        ${{ inputs.pre-deploy-commands }}
+        "${IN_PRE_DEPLOY_COMMANDS}"
 
     - name: Deploy with Kamal v2
       id: kamal-deploy
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_DEPLOYMENT_STRATEGY: ${{ inputs.deployment-strategy }}
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_KAMAL_CONFIG_PATH: ${{ inputs.kamal-config-path }}
       run: |
-        echo "🚀 Starting Kamal v2 deployment to ${{ inputs.environment }}..."
+        echo "🚀 Starting Kamal v2 deployment to ${IN_ENVIRONMENT}..."
 
         # Set deployment flags
-        deploy_flags="-c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }}"
+        deploy_flags="-c ${IN_KAMAL_CONFIG_PATH} -d ${IN_ENVIRONMENT}"
 
         # Add verbose flag if needed
-        if [[ "${{ inputs.deployment-strategy }}" != "immediate" ]]; then
+        if [[ "${IN_DEPLOYMENT_STRATEGY}" != "immediate" ]]; then
           deploy_flags="$deploy_flags --verbose"
         fi
 
         # Run deployment
         if kamal deploy $deploy_flags; then
-          echo "✅ Kamal v2 deployment completed successfully for ${{ inputs.environment }}"
+          echo "✅ Kamal v2 deployment completed successfully for ${IN_ENVIRONMENT}"
           echo "deploy_status=success" >> $GITHUB_OUTPUT
 
           # Get deployed version
-          deployed_version=$(kamal app version -d ${{ inputs.environment }} 2>/dev/null | tail -n1 | tr -d '\n\r' | sed 's/[^a-zA-Z0-9._-]//g' || echo "unknown")
+          deployed_version=$(kamal app version -d "${IN_ENVIRONMENT}" 2>/dev/null | tail -n1 | tr -d '\n\r' | sed 's/[^a-zA-Z0-9._-]//g' || echo "unknown")
           if [[ -z "$deployed_version" || "$deployed_version" == *"INFO"* ]]; then
             deployed_version="unknown"
           fi
           echo "deployed_version=${deployed_version}" >> $GITHUB_OUTPUT
         else
-          echo "❌ Kamal v2 deployment failed for ${{ inputs.environment }}"
+          echo "❌ Kamal v2 deployment failed for ${IN_ENVIRONMENT}"
           echo "deploy_status=failed" >> $GITHUB_OUTPUT
           echo "deployed_version=failed" >> $GITHUB_OUTPUT
           exit 1
@@ -155,9 +165,11 @@ runs:
       if: inputs.post-deploy-commands != '' && success()
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_POST_DEPLOY_COMMANDS: ${{ inputs.post-deploy-commands }}
       run: |
         echo "🔧 Running post-deploy commands..."
-        ${{ inputs.post-deploy-commands }}
+        "${IN_POST_DEPLOY_COMMANDS}"
 
     - name: Set deployment result
       id: deploy-result

@@ -70,25 +70,32 @@ runs:
     - name: Provision infrastructure
       shell: bash
       working-directory: ./unbl-infrastructure/azure
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_POSTGRES_ADMIN_PASSWORD: ${{ inputs.postgres-admin-password }}
       run: |
-        RG="unbl-${{ inputs.environment }}-rg"
-        ENV="${{ inputs.environment }}"
-        
+        RG="unbl-${IN_ENVIRONMENT}-rg"
+        ENV="${IN_ENVIRONMENT}"
+
         echo "🏗️ Provisioning frontend infrastructure..."
         echo "⚠️ NOTE: This will provision ALL infrastructure (shared with backend)"
-        
-        # Create .env file with required secrets
-        cat > .env << 'EOF'
-        POSTGRES_ADMIN_PASSWORD=${{ inputs.postgres-admin-password }}
-        MONGO_ADMIN_PASSWORD=${{ env.MONGO_ADMIN_PASSWORD }}
-        AUTH0_CLIENT_ID=${{ env.AUTH0_CLIENT_ID }}
-        AUTH0_CLIENT_SECRET=${{ env.AUTH0_CLIENT_SECRET }}
-        AUTH0_APPLICATION_CLIENT_ID=${{ env.AUTH0_APPLICATION_CLIENT_ID }}
-        AUTH0_EXTENSION_URL=${{ env.AUTH0_EXTENSION_URL }}
-        SERVICE_API_KEY=${{ env.SERVICE_API_KEY }}
-        SERVICE_API_READ_KEY=${{ env.SERVICE_API_READ_KEY }}
-        GATSBY_MAPBOX_TOKEN=${{ env.GATSBY_MAPBOX_TOKEN }}
-        EOF
+
+        # Create .env file with required secrets.
+        # Built with printf from the environment rather than a heredoc: workflow
+        # expressions are substituted as text before bash runs, so a value
+        # containing a line reading EOF would close the heredoc early and the
+        # remainder of this block would be executed as shell.
+        {
+          printf 'POSTGRES_ADMIN_PASSWORD=%s\n' "${IN_POSTGRES_ADMIN_PASSWORD}"
+          printf 'MONGO_ADMIN_PASSWORD=%s\n' "${MONGO_ADMIN_PASSWORD}"
+          printf 'AUTH0_CLIENT_ID=%s\n' "${AUTH0_CLIENT_ID}"
+          printf 'AUTH0_CLIENT_SECRET=%s\n' "${AUTH0_CLIENT_SECRET}"
+          printf 'AUTH0_APPLICATION_CLIENT_ID=%s\n' "${AUTH0_APPLICATION_CLIENT_ID}"
+          printf 'AUTH0_EXTENSION_URL=%s\n' "${AUTH0_EXTENSION_URL}"
+          printf 'SERVICE_API_KEY=%s\n' "${SERVICE_API_KEY}"
+          printf 'SERVICE_API_READ_KEY=%s\n' "${SERVICE_API_READ_KEY}"
+          printf 'GATSBY_MAPBOX_TOKEN=%s\n' "${GATSBY_MAPBOX_TOKEN}"
+        } > .env
         
         source .env
         
@@ -106,6 +113,7 @@ runs:
       shell: bash
       working-directory: ./unbl-infrastructure/azure
       env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
         # Pass environment variables to the script
         GATSBY_AUTH0_DOMAIN: ${{ env.GATSBY_AUTH0_DOMAIN }}
         AUTH0_CLIENT_ID: ${{ env.AUTH0_CLIENT_ID }}
@@ -113,7 +121,7 @@ runs:
         GATSBY_AUTH0_AUDIENCE: ${{ env.GATSBY_AUTH0_AUDIENCE }}
         GATSBY_MAPBOX_TOKEN: ${{ env.GATSBY_MAPBOX_TOKEN }}
       run: |
-        RG="unbl-${{ inputs.environment }}-rg"
+        RG="unbl-${IN_ENVIRONMENT}-rg"
         
         echo "Deploying frontend using deploy-frontend-full.sh..."
         echo "  Resource Group: $RG"
@@ -130,9 +138,11 @@ runs:
     - name: Run health checks
       shell: bash
       working-directory: ./unbl-infrastructure/azure
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
-        RG="unbl-${{ inputs.environment }}-rg"
-        ENV="${{ inputs.environment }}"
+        RG="unbl-${IN_ENVIRONMENT}-rg"
+        ENV="${IN_ENVIRONMENT}"
         
         echo "Running health checks..."
         ./scripts/health-check.sh --resource-group "$RG" --environment "$ENV" || {
@@ -144,12 +154,14 @@ runs:
       id: deploy-result
       shell: bash
       working-directory: ./unbl-infrastructure/azure
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
         END_TIME=$(date +%s)
         DURATION=$((END_TIME - ${{ steps.start.outputs.start_time }}))
         
         # Get frontend URL from deployment outputs
-        RG="unbl-${{ inputs.environment }}-rg"
+        RG="unbl-${IN_ENVIRONMENT}-rg"
         STORAGE_ACCOUNT=$(az storage account list \
           --resource-group "$RG" \
           --query "[?contains(name, 'frontend')].name" -o tsv | head -1)

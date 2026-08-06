@@ -60,18 +60,21 @@ runs:
   steps:
     - name: Validate inputs
       shell: bash
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_WORKING_DIRECTORY: ${{ inputs.working-directory }}
       run: |
         echo "🔍 Validating Nuxt deployment inputs..."
 
         # Validate environment
-        if [[ ! "${{ inputs.environment }}" =~ ^(staging|production)$ ]]; then
+        if [[ ! "${IN_ENVIRONMENT}" =~ ^(staging|production)$ ]]; then
           echo "❌ Error: environment must be either 'staging' or 'production'"
           exit 1
         fi
 
         # Validate working directory
-        if [[ ! -d "${{ inputs.working-directory }}" ]]; then
-          echo "❌ Error: working-directory '${{ inputs.working-directory }}' does not exist"
+        if [[ ! -d "${IN_WORKING_DIRECTORY}" ]]; then
+          echo "❌ Error: working-directory '${IN_WORKING_DIRECTORY}' does not exist"
           exit 1
         fi
 
@@ -88,6 +91,8 @@ runs:
 
     - name: Validate required environment variables
       shell: bash
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
         echo "🔧 Validating required environment variables..."
         
@@ -113,7 +118,7 @@ runs:
         for var_name in "${var_names[@]}"; do
           if [[ -z "${!var_name}" ]]; then
             echo "❌ Error: ${var_name} is not set or empty"
-            echo "Please add this secret to your GitHub environment (${{ inputs.environment }})"
+            echo "Please add this secret to your GitHub environment (${IN_ENVIRONMENT})"
             exit 1
           else
             echo "✅ ${var_name} is set"
@@ -140,9 +145,11 @@ runs:
 
     - name: Install Kamal v1
       shell: bash
+      env:
+        IN_KAMAL_VERSION: ${{ inputs.kamal-version }}
       run: |
-        echo "🚢 Installing Kamal v${{ inputs.kamal-version }}..."
-        gem install kamal -v ${{ inputs.kamal-version }}
+        echo "🚢 Installing Kamal v${IN_KAMAL_VERSION}..."
+        gem install kamal -v "${IN_KAMAL_VERSION}"
         kamal version
 
     - name: Set up SSH
@@ -170,9 +177,12 @@ runs:
     - name: Create environment-specific .env file
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ADDITIONAL_ENV_VARS: ${{ inputs.additional-env-vars }}
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
         echo "🔐 Creating environment-specific .env file..."
-        env_file=".env.${{ inputs.environment }}"
+        env_file=".env.${IN_ENVIRONMENT}"
 
         # Remove existing env file if it exists
         rm -f "$env_file"
@@ -197,10 +207,10 @@ runs:
         EOF
 
         # Add additional environment variables if provided
-        if [[ -n "${{ inputs.additional-env-vars }}" ]]; then
+        if [[ -n "${IN_ADDITIONAL_ENV_VARS}" ]]; then
           echo "" >> "$env_file"
           echo "# Additional environment variables" >> "$env_file"
-          echo "${{ inputs.additional-env-vars }}" >> "$env_file"
+          echo "${IN_ADDITIONAL_ENV_VARS}" >> "$env_file"
         fi
 
         # Set proper permissions
@@ -213,22 +223,27 @@ runs:
       if: inputs.pre-deploy-commands != ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_PRE_DEPLOY_COMMANDS: ${{ inputs.pre-deploy-commands }}
       run: |
         echo "🔧 Running pre-deploy commands..."
-        env_file=".env.${{ inputs.environment }}"
+        env_file=".env.${IN_ENVIRONMENT}"
         export $(grep -v '^#' "$env_file" | xargs)
-        ${{ inputs.pre-deploy-commands }}
+        "${IN_PRE_DEPLOY_COMMANDS}"
 
     - name: Push environment variables to Kamal
       if: inputs.skip-env-push != 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
         echo "📤 Pushing environment variables to Kamal..."
-        env_file=".env.${{ inputs.environment }}"
+        env_file=".env.${IN_ENVIRONMENT}"
         export $(grep -v '^#' "$env_file" | xargs)
 
-        if kamal env push -d ${{ inputs.environment }}; then
+        if kamal env push -d "${IN_ENVIRONMENT}"; then
           echo "✅ Environment variables pushed successfully"
         else
           echo "❌ Failed to push environment variables"
@@ -239,14 +254,16 @@ runs:
       id: kamal-deploy
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
-        echo "🚀 Starting Nuxt deployment with Kamal v1 to ${{ inputs.environment }}..."
+        echo "🚀 Starting Nuxt deployment with Kamal v1 to ${IN_ENVIRONMENT}..."
         start_time=$(date +%s)
 
-        env_file=".env.${{ inputs.environment }}"
+        env_file=".env.${IN_ENVIRONMENT}"
         export $(grep -v '^#' "$env_file" | xargs)
 
-        if kamal deploy -d ${{ inputs.environment }}; then
+        if kamal deploy -d "${IN_ENVIRONMENT}"; then
           end_time=$(date +%s)
           duration=$((end_time - start_time))
           echo "deploy-duration=${duration}" >> $GITHUB_OUTPUT
@@ -265,11 +282,14 @@ runs:
       if: inputs.post-deploy-commands != '' && success()
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_POST_DEPLOY_COMMANDS: ${{ inputs.post-deploy-commands }}
       run: |
         echo "🔧 Running post-deploy commands..."
-        env_file=".env.${{ inputs.environment }}"
+        env_file=".env.${IN_ENVIRONMENT}"
         export $(grep -v '^#' "$env_file" | xargs)
-        ${{ inputs.post-deploy-commands }}
+        "${IN_POST_DEPLOY_COMMANDS}"
 
     - name: Set deployment end time
       id: set-end-time
@@ -300,9 +320,11 @@ runs:
       if: always()
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
         echo "🧹 Cleaning up environment file..."
-        env_file=".env.${{ inputs.environment }}"
+        env_file=".env.${IN_ENVIRONMENT}"
         if [[ -f "$env_file" ]]; then
           rm -f "$env_file"
           echo "✅ Environment file removed"

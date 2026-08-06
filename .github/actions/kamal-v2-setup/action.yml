@@ -84,24 +84,29 @@ runs:
   steps:
     - name: Validate inputs
       shell: bash
+      env:
+        IN_DOCKERFILE_PATH: ${{ inputs.dockerfile-path }}
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_KAMAL_CONFIG_PATH: ${{ inputs.kamal-config-path }}
+        IN_WORKING_DIRECTORY: ${{ inputs.working-directory }}
       run: |
         echo "🔍 Validating inputs..."
 
         # Validate environment
-        if [[ ! "${{ inputs.environment }}" =~ ^(staging|production)$ ]]; then
+        if [[ ! "${IN_ENVIRONMENT}" =~ ^(staging|production)$ ]]; then
           echo "❌ Error: environment must be either 'staging' or 'production'"
           exit 1
         fi
 
         # Validate working directory exists
-        if [[ ! -d "${{ inputs.working-directory }}" ]]; then
-          echo "❌ Error: working-directory '${{ inputs.working-directory }}' does not exist"
+        if [[ ! -d "${IN_WORKING_DIRECTORY}" ]]; then
+          echo "❌ Error: working-directory '${IN_WORKING_DIRECTORY}' does not exist"
           exit 1
         fi
 
         # Validate required files
-        dockerfile_path="${{ inputs.working-directory }}/${{ inputs.dockerfile-path }}"
-        kamal_config_path="${{ inputs.working-directory }}/${{ inputs.kamal-config-path }}"
+        dockerfile_path="${IN_WORKING_DIRECTORY}/${IN_DOCKERFILE_PATH}"
+        kamal_config_path="${IN_WORKING_DIRECTORY}/${IN_KAMAL_CONFIG_PATH}"
 
         if [[ ! -f "$dockerfile_path" ]]; then
           echo "❌ Error: Dockerfile not found at '$dockerfile_path'"
@@ -117,6 +122,8 @@ runs:
 
     - name: Validate required environment variables
       shell: bash
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
         echo "🔧 Validating required environment variables for Kamal v2 setup..."
         
@@ -143,7 +150,7 @@ runs:
           echo "❌ Error: Missing required environment variables:"
           printf '  - %s\n' "${missing_vars[@]}"
           echo ""
-          echo "Please add these secrets to your GitHub environment (${{ inputs.environment }})"
+          echo "Please add these secrets to your GitHub environment (${IN_ENVIRONMENT})"
           exit 1
         fi
 
@@ -217,9 +224,11 @@ runs:
 
     - name: Install Kamal
       shell: bash
+      env:
+        IN_KAMAL_VERSION: ${{ inputs.kamal-version }}
       run: |
-        echo "🚢 Installing Kamal v${{ inputs.kamal-version }}..."
-        gem install kamal -v ${{ inputs.kamal-version }}
+        echo "🚢 Installing Kamal v${IN_KAMAL_VERSION}..."
+        gem install kamal -v "${IN_KAMAL_VERSION}"
         kamal version
 
     - name: Set up SSH
@@ -230,14 +239,16 @@ runs:
     - name: Test SSH connectivity
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_KAMAL_CONFIG_PATH: ${{ inputs.kamal-config-path }}
       run: |
         echo "🔑 Testing SSH connectivity..."
         # Extract hosts from Kamal config
         if command -v yq >/dev/null 2>&1; then
-          hosts=$(yq eval '.servers.*[]' ${{ inputs.kamal-config-path }} 2>/dev/null || echo "")
+          hosts=$(yq eval '.servers.*[]' "${IN_KAMAL_CONFIG_PATH}" 2>/dev/null || echo "")
         else
           # Fallback to grep if yq is not available
-          hosts=$(grep -oP 'servers:.*?(\d+\.\d+\.\d+\.\d+)' ${{ inputs.kamal-config-path }} || echo "")
+          hosts=$(grep -oP 'servers:.*?(\d+\.\d+\.\d+\.\d+)' "${IN_KAMAL_CONFIG_PATH}" || echo "")
         fi
 
         if [[ -n "$hosts" ]]; then
@@ -272,6 +283,9 @@ runs:
     - name: Create Kamal secrets file
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_DATABASE_PORT: ${{ inputs.database-port }}
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
         echo "📝 Creating Kamal secrets file from environment variables..."
         
@@ -280,7 +294,7 @@ runs:
         
         # Create secrets file from environment variables (same approach as working Nuxt action)
         if [[ -f ".kamal/secrets-common" ]]; then
-          cp .kamal/secrets-common .kamal/secrets.${{ inputs.environment }}
+          cp .kamal/secrets-common .kamal/secrets."${IN_ENVIRONMENT}"
           
           # Replace environment variable references with actual values (safer approach)
           temp_file=$(mktemp)
@@ -310,18 +324,18 @@ runs:
           done < .kamal/secrets-common
           
           # Replace the original file
-          mv "$temp_file" .kamal/secrets.${{ inputs.environment }}
+          mv "$temp_file" .kamal/secrets."${IN_ENVIRONMENT}"
           
           # Handle DATABASE_PORT with fallback to default
-          if grep -q "DATABASE_PORT=" .kamal/secrets.${{ inputs.environment }}; then
+          if grep -q "DATABASE_PORT=" .kamal/secrets."${IN_ENVIRONMENT}"; then
             if [[ -z "${DATABASE_PORT}" ]]; then
-              sed -i "s|DATABASE_PORT=|DATABASE_PORT=${{ inputs.database-port }}|g" .kamal/secrets.${{ inputs.environment }}
-              echo "✅ Using default DATABASE_PORT: ${{ inputs.database-port }}"
+              sed -i "s|DATABASE_PORT=|DATABASE_PORT=${IN_DATABASE_PORT}|g" .kamal/secrets."${IN_ENVIRONMENT}"
+              echo "✅ Using default DATABASE_PORT: ${IN_DATABASE_PORT}"
             fi
           fi
           
           # Secure the secrets file
-          chmod 600 .kamal/secrets.${{ inputs.environment }}
+          chmod 600 .kamal/secrets."${IN_ENVIRONMENT}"
           echo "✅ Kamal secrets file created successfully from template"
         else
           echo "❌ Error: .kamal/secrets-common template not found"
@@ -333,34 +347,42 @@ runs:
       if: inputs.pre-setup-commands != ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_PRE_SETUP_COMMANDS: ${{ inputs.pre-setup-commands }}
       run: |
         echo "🔧 Running pre-setup commands..."
-        ${{ inputs.pre-setup-commands }}
+        "${IN_PRE_SETUP_COMMANDS}"
 
     - name: Validate Kamal configuration
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_KAMAL_CONFIG_PATH: ${{ inputs.kamal-config-path }}
       run: |
         echo "✅ Validating Kamal configuration..."
         # Load secrets
-        export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
+        export $(grep -v '^#' .kamal/secrets."${IN_ENVIRONMENT}" | xargs)
 
         # Validate config
-        kamal config validate -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }}
+        kamal config validate -c "${IN_KAMAL_CONFIG_PATH}" -d "${IN_ENVIRONMENT}"
 
     - name: Run Kamal setup with timeout
       id: kamal-setup
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_KAMAL_CONFIG_PATH: ${{ inputs.kamal-config-path }}
       run: |
-        echo "🚀 Starting Kamal setup for ${{ inputs.environment }}..."
+        echo "🚀 Starting Kamal setup for ${IN_ENVIRONMENT}..."
         start_time=$(date +%s)
 
         # Load secrets
-        export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
+        export $(grep -v '^#' .kamal/secrets."${IN_ENVIRONMENT}" | xargs)
 
         # Run setup with verbose output
-        if kamal setup --verbose -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }}; then
+        if kamal setup --verbose -c "${IN_KAMAL_CONFIG_PATH}" -d "${IN_ENVIRONMENT}"; then
           end_time=$(date +%s)
           duration=$((end_time - start_time))
           echo "setup-duration=${duration}" >> $GITHUB_OUTPUT
@@ -379,15 +401,18 @@ runs:
       if: inputs.enable-health-checks == 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_KAMAL_CONFIG_PATH: ${{ inputs.kamal-config-path }}
       run: |
         echo "🏥 Running health checks..."
-        export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
+        export $(grep -v '^#' .kamal/secrets."${IN_ENVIRONMENT}" | xargs)
 
         # Check if containers are running
-        kamal ps -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }}
+        kamal ps -c "${IN_KAMAL_CONFIG_PATH}" -d "${IN_ENVIRONMENT}"
 
         # Check application health if health check endpoint is configured
-        if grep -q "healthcheck" ${{ inputs.kamal-config-path }}; then
+        if grep -q "healthcheck" "${IN_KAMAL_CONFIG_PATH}"; then
           echo "🔍 Checking application health endpoints..."
           # Add specific health check logic here based on your app's health endpoint
         fi
@@ -396,9 +421,11 @@ runs:
       if: inputs.post-setup-commands != ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_POST_SETUP_COMMANDS: ${{ inputs.post-setup-commands }}
       run: |
         echo "🔧 Running post-setup commands..."
-        ${{ inputs.post-setup-commands }}
+        "${IN_POST_SETUP_COMMANDS}"
 
     - name: Set setup result
       id: setup-result
@@ -422,10 +449,12 @@ runs:
       if: failure()
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
         echo "🧹 Cleaning up after failure..."
         # Remove secrets file
-        rm -f .kamal/secrets.${{ inputs.environment }}
+        rm -f .kamal/secrets."${IN_ENVIRONMENT}"
 
         # Clean up Docker resources
         docker system prune -f || true

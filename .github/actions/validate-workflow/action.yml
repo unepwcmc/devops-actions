@@ -15,21 +15,26 @@ runs:
   steps:
     - name: Check workflow file exists
       shell: bash
+      env:
+        IN_WORKFLOW_FILE: ${{ inputs.workflow-file }}
       run: |
-        if [ ! -f "${{ inputs.workflow-file }}" ]; then
-          echo "::error::Workflow file not found at ${{ inputs.workflow-file }}"
+        if [ ! -f "${IN_WORKFLOW_FILE}" ]; then
+          echo "::error::Workflow file not found at ${IN_WORKFLOW_FILE}"
           exit 1
         fi
 
     - name: Validate required actions
       shell: bash
+      env:
+        IN_REQUIRED_ACTIONS: ${{ inputs.required-actions }}
+        IN_WORKFLOW_FILE: ${{ inputs.workflow-file }}
       run: |
         # Convert comma-separated list to array
-        IFS=',' read -ra REQUIRED_ACTIONS <<< "${{ inputs.required-actions }}"
+        IFS=',' read -ra REQUIRED_ACTIONS <<< "${IN_REQUIRED_ACTIONS}"
         
         # Check each required action
         for action in "${REQUIRED_ACTIONS[@]}"; do
-          if ! grep -q "uses:.*$action" "${{ inputs.workflow-file }}"; then
+          if ! grep -q "uses:.*$action" "${IN_WORKFLOW_FILE}"; then
             echo "::error::Required action '$action' not found in workflow"
             echo "Please add the $action action to your workflow"
             exit 1
@@ -38,9 +43,11 @@ runs:
 
     - name: Validate environment configuration
       shell: bash
+      env:
+        IN_WORKFLOW_FILE: ${{ inputs.workflow-file }}
       run: |
         # Check if environment is properly configured
-        if ! grep -q "environment:" "${{ inputs.workflow-file }}"; then
+        if ! grep -q "environment:" "${IN_WORKFLOW_FILE}"; then
           echo "::error::Workflow is missing environment configuration"
           echo "Please add environment configuration to your workflow"
           exit 1
@@ -48,9 +55,11 @@ runs:
 
     - name: Validate secrets usage
       shell: bash
+      env:
+        IN_WORKFLOW_FILE: ${{ inputs.workflow-file }}
       run: |
         # Check if secrets are being used directly instead of through validate-secrets
-        if grep -q "\${{ secrets\." "${{ inputs.workflow-file }}"; then
+        if grep -q "\${{ secrets\." "${IN_WORKFLOW_FILE}"; then
           echo "::warning::Workflow is using secrets directly"
           echo "Consider using the validate-secrets action instead"
         fi 

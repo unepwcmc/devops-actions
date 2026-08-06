@@ -39,18 +39,21 @@ runs:
   steps:
     - name: Validate inputs and environment
       shell: bash
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_WORKING_DIRECTORY: ${{ inputs.working-directory }}
       run: |
         echo "🔍 Validating Nuxt Kamal v2 setup (simplified)..."
 
         # Validate environment
-        if [[ ! "${{ inputs.environment }}" =~ ^(staging|production)$ ]]; then
+        if [[ ! "${IN_ENVIRONMENT}" =~ ^(staging|production)$ ]]; then
           echo "❌ Error: environment must be either 'staging' or 'production'"
           exit 1
         fi
 
         # Validate working directory
-        if [[ ! -d "${{ inputs.working-directory }}" ]]; then
-          echo "❌ Error: working-directory '${{ inputs.working-directory }}' does not exist"
+        if [[ ! -d "${IN_WORKING_DIRECTORY}" ]]; then
+          echo "❌ Error: working-directory '${IN_WORKING_DIRECTORY}' does not exist"
           exit 1
         fi
 
@@ -58,6 +61,8 @@ runs:
 
     - name: Validate required environment variables
       shell: bash
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
         echo "🔧 Validating required environment variables..."
         
@@ -84,7 +89,7 @@ runs:
           echo "     uses: unepwcmc/devops-actions/.github/actions/validate-secrets@v1"
           echo "     with:"
           echo "       secrets-file: '.kamal/secrets-common'"
-          echo "       environment: '${{ inputs.environment }}'"
+          echo "       environment: '${IN_ENVIRONMENT}'"
           exit 1
         fi
 
@@ -112,9 +117,11 @@ runs:
 
     - name: Install Kamal
       shell: bash
+      env:
+        IN_KAMAL_VERSION: ${{ inputs.kamal-version }}
       run: |
-        echo "📦 Installing Kamal v${{ inputs.kamal-version }}..."
-        gem install kamal -v ${{ inputs.kamal-version }}
+        echo "📦 Installing Kamal v${IN_KAMAL_VERSION}..."
+        gem install kamal -v "${IN_KAMAL_VERSION}"
         kamal version
 
     - name: Setup SSH key
@@ -194,11 +201,13 @@ runs:
     - name: Setup Kamal environment
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
-        echo "🏗️  Setting up Kamal environment for ${{ inputs.environment }}..."
+        echo "🏗️  Setting up Kamal environment for ${IN_ENVIRONMENT}..."
         
         # Set deployment environment
-        export KAMAL_ENV="${{ inputs.environment }}"
+        export KAMAL_ENV="${IN_ENVIRONMENT}"
         
         # Run Kamal setup
         kamal setup || {
@@ -238,6 +247,8 @@ runs:
       id: setup-result
       if: always()
       shell: bash
+      env:
+        IN_KAMAL_VERSION: ${{ inputs.kamal-version }}
       run: |
         end_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
         start_time="${{ steps.set-times.outputs.start-time }}"
@@ -248,7 +259,7 @@ runs:
         duration=$((end_epoch - start_epoch))
         
         echo "duration=${duration}" >> $GITHUB_OUTPUT
-        echo "kamal-version=${{ inputs.kamal-version }}" >> $GITHUB_OUTPUT
+        echo "kamal-version=${IN_KAMAL_VERSION}" >> $GITHUB_OUTPUT
         
         if [[ "${{ job.status }}" == "success" ]]; then
           echo "status=success" >> $GITHUB_OUTPUT

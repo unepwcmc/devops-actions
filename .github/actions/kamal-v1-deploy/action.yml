@@ -97,24 +97,28 @@ runs:
   steps:
     - name: Validate inputs
       shell: bash
+      env:
+        IN_DEPLOYMENT_STRATEGY: ${{ inputs.deployment-strategy }}
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_WORKING_DIRECTORY: ${{ inputs.working-directory }}
       run: |
         echo "🔍 Validating deployment inputs for Kamal v1..."
 
         # Validate environment
-        if [[ ! "${{ inputs.environment }}" =~ ^(staging|production)$ ]]; then
+        if [[ ! "${IN_ENVIRONMENT}" =~ ^(staging|production)$ ]]; then
           echo "❌ Error: environment must be either 'staging' or 'production'"
           exit 1
         fi
 
         # Validate deployment strategy
-        if [[ ! "${{ inputs.deployment-strategy }}" =~ ^(rolling|blue-green|immediate)$ ]]; then
+        if [[ ! "${IN_DEPLOYMENT_STRATEGY}" =~ ^(rolling|blue-green|immediate)$ ]]; then
           echo "❌ Error: deployment-strategy must be one of: rolling, blue-green, immediate"
           exit 1
         fi
 
         # Validate working directory exists
-        if [[ ! -d "${{ inputs.working-directory }}" ]]; then
-          echo "❌ Error: working-directory '${{ inputs.working-directory }}' does not exist"
+        if [[ ! -d "${IN_WORKING_DIRECTORY}" ]]; then
+          echo "❌ Error: working-directory '${IN_WORKING_DIRECTORY}' does not exist"
           exit 1
         fi
 
@@ -122,6 +126,8 @@ runs:
 
     - name: Validate required environment variables
       shell: bash
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
         echo "🔧 Validating required environment variables for Kamal v1 deployment..."
         
@@ -141,7 +147,7 @@ runs:
         for var_name in "${var_names[@]}"; do
           if [[ -z "${!var_name}" ]]; then
             echo "❌ Error: ${var_name} is not set or empty"
-            echo "Please add this secret to your GitHub environment (${{ inputs.environment }})"
+            echo "Please add this secret to your GitHub environment (${IN_ENVIRONMENT})"
             exit 1
           else
             echo "✅ ${var_name} is set"
@@ -163,9 +169,11 @@ runs:
 
     - name: Install Kamal v1
       shell: bash
+      env:
+        IN_KAMAL_VERSION: ${{ inputs.kamal-version }}
       run: |
-        echo "🚢 Installing Kamal v${{ inputs.kamal-version }} (Legacy v1)..."
-        gem install kamal -v ${{ inputs.kamal-version }}
+        echo "🚢 Installing Kamal v${IN_KAMAL_VERSION} (Legacy v1)..."
+        gem install kamal -v "${IN_KAMAL_VERSION}"
         kamal version
 
     - name: Set up SSH
@@ -195,10 +203,41 @@ runs:
     - name: Create Kamal v1 secrets file
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ADDITIONAL_SECRETS: ${{ inputs.additional-secrets }}
+        IN_AWS_ACCESS_KEY_ID: ${{ inputs.aws-access-key-id }}
+        IN_AWS_REGION: ${{ inputs.aws-region }}
+        IN_AWS_S3_ACCESS_KEY_ID: ${{ inputs.aws-s3-access-key-id }}
+        IN_AWS_S3_BUCKET_NAME: ${{ inputs.aws-s3-bucket-name }}
+        IN_AWS_S3_REGION: ${{ inputs.aws-s3-region }}
+        IN_AWS_S3_SECRET_ACCESS_KEY: ${{ inputs.aws-s3-secret-access-key }}
+        IN_AWS_SECRET_ACCESS_KEY: ${{ inputs.aws-secret-access-key }}
+        IN_AZURE_AD_CLIENT_ID: ${{ inputs.azure-ad-client-id }}
+        IN_AZURE_AD_CLIENT_SECRET: ${{ inputs.azure-ad-client-secret }}
+        IN_AZURE_AD_TENANT_ID: ${{ inputs.azure-ad-tenant-id }}
+        IN_DATABASE_ENV_PREFIX: ${{ inputs.database-env-prefix }}
+        IN_DATABASE_HOST: ${{ inputs.database-host }}
+        IN_DATABASE_NAME: ${{ inputs.database-name }}
+        IN_DATABASE_PASSWORD: ${{ inputs.database-password }}
+        IN_DATABASE_PORT: ${{ inputs.database-port }}
+        IN_DATABASE_USERNAME: ${{ inputs.database-username }}
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_FRONTEND_APP_NAME: ${{ inputs.frontend-app-name }}
+        IN_KAMAL_REGISTRY_PASSWORD: ${{ inputs.kamal-registry-password }}
+        IN_KAMAL_REGISTRY_USERNAME: ${{ inputs.kamal-registry-username }}
+        IN_MAIL_PASSWORD: ${{ inputs.mail-password }}
+        IN_MAIL_USERNAME: ${{ inputs.mail-username }}
+        IN_RAILS_MASTER_KEY: ${{ inputs.rails-master-key }}
+        IN_REDIS_DATABASE: ${{ inputs.redis-database }}
+        IN_REDIS_HOST: ${{ inputs.redis-host }}
+        IN_REDIS_PASSWORD: ${{ inputs.redis-password }}
+        IN_REDIS_PORT: ${{ inputs.redis-port }}
+        IN_REDIS_USERNAME: ${{ inputs.redis-username }}
+        IN_WCMC_USER_MANAGEMENT_SECRET: ${{ inputs.wcmc-user-management-secret }}
       run: |
         echo "🔐 Creating Kamal v1 secrets file..."
         mkdir -p .kamal
-        secrets_file=".kamal/secrets.${{ inputs.environment }}"
+        secrets_file=".kamal/secrets.${IN_ENVIRONMENT}"
 
         # Create secrets file with proper permissions
         touch "$secrets_file"
@@ -206,73 +245,73 @@ runs:
 
         # Base secrets (v1 format)
         cat <<EOF > "$secrets_file"
-        KAMAL_REGISTRY_USERNAME=${{ inputs.kamal-registry-username }}
-        KAMAL_REGISTRY_PASSWORD=${{ inputs.kamal-registry-password }}
-        RAILS_MASTER_KEY=${{ inputs.rails-master-key }}
-        ${{ inputs.database-env-prefix }}_DATABASE_HOSTNAME=${{ inputs.database-host }}
-        ${{ inputs.database-env-prefix }}_DATABASE_NAME=${{ inputs.database-name }}
-        ${{ inputs.database-env-prefix }}_DATABASE_USERNAME=${{ inputs.database-username }}
-        ${{ inputs.database-env-prefix }}_DATABASE_PASSWORD=${{ inputs.database-password }}
-        ${{ inputs.database-env-prefix }}_DATABASE_PORT=${{ inputs.database-port }}
+        KAMAL_REGISTRY_USERNAME=${IN_KAMAL_REGISTRY_USERNAME}
+        KAMAL_REGISTRY_PASSWORD=${IN_KAMAL_REGISTRY_PASSWORD}
+        RAILS_MASTER_KEY=${IN_RAILS_MASTER_KEY}
+        ${IN_DATABASE_ENV_PREFIX}_DATABASE_HOSTNAME=${IN_DATABASE_HOST}
+        ${IN_DATABASE_ENV_PREFIX}_DATABASE_NAME=${IN_DATABASE_NAME}
+        ${IN_DATABASE_ENV_PREFIX}_DATABASE_USERNAME=${IN_DATABASE_USERNAME}
+        ${IN_DATABASE_ENV_PREFIX}_DATABASE_PASSWORD=${IN_DATABASE_PASSWORD}
+        ${IN_DATABASE_ENV_PREFIX}_DATABASE_PORT=${IN_DATABASE_PORT}
         EOF
 
         # Add Redis configuration if provided
-        if [[ -n "${{ inputs.redis-username }}" && -n "${{ inputs.redis-password }}" ]]; then
-          echo "REDIS_USERNAME=${{ inputs.redis-username }}" >> "$secrets_file"
-          echo "REDIS_PASSWORD=${{ inputs.redis-password }}" >> "$secrets_file"
-          echo "SIDEKIQ_REDIS_URL=redis://${{ inputs.redis-username }}:${{ inputs.redis-password }}@${{ inputs.redis-host }}:${{ inputs.redis-port }}/${{ inputs.redis-database }}" >> "$secrets_file"
+        if [[ -n "${IN_REDIS_USERNAME}" && -n "${IN_REDIS_PASSWORD}" ]]; then
+          echo "REDIS_USERNAME=${IN_REDIS_USERNAME}" >> "$secrets_file"
+          echo "REDIS_PASSWORD=${IN_REDIS_PASSWORD}" >> "$secrets_file"
+          echo "SIDEKIQ_REDIS_URL=redis://${IN_REDIS_USERNAME}:${IN_REDIS_PASSWORD}@${IN_REDIS_HOST}:${IN_REDIS_PORT}/${IN_REDIS_DATABASE}" >> "$secrets_file"
           echo "✅ Added Redis configuration with Sidekiq URL"
         fi
 
         # Add Mail configuration if provided
-        if [[ -n "${{ inputs.mail-username }}" && -n "${{ inputs.mail-password }}" ]]; then
-          echo "MAIL_USERNAME=${{ inputs.mail-username }}" >> "$secrets_file"
-          echo "MAIL_PASSWORD=${{ inputs.mail-password }}" >> "$secrets_file"
+        if [[ -n "${IN_MAIL_USERNAME}" && -n "${IN_MAIL_PASSWORD}" ]]; then
+          echo "MAIL_USERNAME=${IN_MAIL_USERNAME}" >> "$secrets_file"
+          echo "MAIL_PASSWORD=${IN_MAIL_PASSWORD}" >> "$secrets_file"
           echo "✅ Added Mail server configuration"
         fi
 
         # Add AWS general secrets if provided
-        if [[ -n "${{ inputs.aws-access-key-id }}" ]]; then
-          echo "AWS_ACCESS_KEY_ID=${{ inputs.aws-access-key-id }}" >> "$secrets_file"
-          echo "AWS_SECRET_ACCESS_KEY=${{ inputs.aws-secret-access-key }}" >> "$secrets_file"
-          echo "AWS_REGION=${{ inputs.aws-region }}" >> "$secrets_file"
+        if [[ -n "${IN_AWS_ACCESS_KEY_ID}" ]]; then
+          echo "AWS_ACCESS_KEY_ID=${IN_AWS_ACCESS_KEY_ID}" >> "$secrets_file"
+          echo "AWS_SECRET_ACCESS_KEY=${IN_AWS_SECRET_ACCESS_KEY}" >> "$secrets_file"
+          echo "AWS_REGION=${IN_AWS_REGION}" >> "$secrets_file"
           echo "✅ Added AWS general configuration"
         fi
 
         # Add AWS S3 specific secrets if provided
-        if [[ -n "${{ inputs.aws-s3-access-key-id }}" ]]; then
-          echo "AWS_S3_ACCESS_KEY_ID=${{ inputs.aws-s3-access-key-id }}" >> "$secrets_file"
-          echo "AWS_S3_SECRET_ACCESS_KEY=${{ inputs.aws-s3-secret-access-key }}" >> "$secrets_file"
-          echo "AWS_S3_REGION=${{ inputs.aws-s3-region }}" >> "$secrets_file"
-          echo "AWS_S3_NAME=${{ inputs.aws-s3-bucket-name }}" >> "$secrets_file"
+        if [[ -n "${IN_AWS_S3_ACCESS_KEY_ID}" ]]; then
+          echo "AWS_S3_ACCESS_KEY_ID=${IN_AWS_S3_ACCESS_KEY_ID}" >> "$secrets_file"
+          echo "AWS_S3_SECRET_ACCESS_KEY=${IN_AWS_S3_SECRET_ACCESS_KEY}" >> "$secrets_file"
+          echo "AWS_S3_REGION=${IN_AWS_S3_REGION}" >> "$secrets_file"
+          echo "AWS_S3_NAME=${IN_AWS_S3_BUCKET_NAME}" >> "$secrets_file"
           echo "✅ Added AWS S3 configuration"
         fi
 
         # Add Frontend Integration if provided
-        if [[ -n "${{ inputs.frontend-app-name }}" ]]; then
-          echo "FRONTEND_APP_NAME=${{ inputs.frontend-app-name }}" >> "$secrets_file"
+        if [[ -n "${IN_FRONTEND_APP_NAME}" ]]; then
+          echo "FRONTEND_APP_NAME=${IN_FRONTEND_APP_NAME}" >> "$secrets_file"
           echo "✅ Added Frontend integration configuration"
         fi
 
         # Add Azure AD configuration if provided
-        if [[ -n "${{ inputs.azure-ad-client-id }}" ]]; then
-          echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID=${{ inputs.azure-ad-client-id }}" >> "$secrets_file"
-          echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_SECRET=${{ inputs.azure-ad-client-secret }}" >> "$secrets_file"
-          echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_TENANT_ID=${{ inputs.azure-ad-tenant-id }}" >> "$secrets_file"
+        if [[ -n "${IN_AZURE_AD_CLIENT_ID}" ]]; then
+          echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_ID=${IN_AZURE_AD_CLIENT_ID}" >> "$secrets_file"
+          echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_CLIENT_SECRET=${IN_AZURE_AD_CLIENT_SECRET}" >> "$secrets_file"
+          echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_AZURE_AD_TENANT_ID=${IN_AZURE_AD_TENANT_ID}" >> "$secrets_file"
           echo "✅ Added Azure AD configuration for WCMC User Management"
         fi
 
         # Add WCMC User Management configuration if provided
-        if [[ -n "${{ inputs.wcmc-user-management-secret }}" ]]; then
-          echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET=${{ inputs.wcmc-user-management-secret }}" >> "$secrets_file"
+        if [[ -n "${IN_WCMC_USER_MANAGEMENT_SECRET}" ]]; then
+          echo "NUXT_WCMC_MODULES_WCMC_USER_MANAGEMENT_SECRET=${IN_WCMC_USER_MANAGEMENT_SECRET}" >> "$secrets_file"
           echo "✅ Added WCMC User Management configuration"
         fi
 
         # Add additional secrets if provided
-        if [[ -n "${{ inputs.additional-secrets }}" ]]; then
+        if [[ -n "${IN_ADDITIONAL_SECRETS}" ]]; then
           echo "" >> "$secrets_file"
           echo "# Additional project-specific secrets" >> "$secrets_file"
-          echo "${{ inputs.additional-secrets }}" >> "$secrets_file"
+          echo "${IN_ADDITIONAL_SECRETS}" >> "$secrets_file"
           echo "✅ Added additional project-specific secrets"
         fi
 
@@ -282,13 +321,16 @@ runs:
       id: current-deployment
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_KAMAL_CONFIG_PATH: ${{ inputs.kamal-config-path }}
       run: |
         echo "📋 Getting current deployment information..."
-        export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
+        export $(grep -v '^#' .kamal/secrets."${IN_ENVIRONMENT}" | xargs)
 
         # Get current version/container info for potential rollback (v1 syntax)
-        if kamal ps -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }} 2>/dev/null; then
-          current_containers=$(kamal ps -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }} 2>/dev/null | grep -v "CONTAINER" | head -1 | awk '{print $2}' || echo "none")
+        if kamal ps -c "${IN_KAMAL_CONFIG_PATH}" -d "${IN_ENVIRONMENT}" 2>/dev/null; then
+          current_containers=$(kamal ps -c "${IN_KAMAL_CONFIG_PATH}" -d "${IN_ENVIRONMENT}" 2>/dev/null | grep -v "CONTAINER" | head -1 | awk '{print $2}' || echo "none")
           echo "current-version=${current_containers}" >> $GITHUB_OUTPUT
           echo "ℹ️ Current running containers: ${current_containers}"
         else
@@ -300,9 +342,11 @@ runs:
       if: inputs.enable-maintenance-mode == 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
         echo "🚧 Enabling maintenance mode for Kamal v1..."
-        export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
+        export $(grep -v '^#' .kamal/secrets."${IN_ENVIRONMENT}" | xargs)
 
         # Create a simple maintenance page if it doesn't exist
         if [[ ! -f "public/maintenance.html" ]]; then
@@ -328,24 +372,30 @@ runs:
       if: inputs.pre-deploy-commands != ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_PRE_DEPLOY_COMMANDS: ${{ inputs.pre-deploy-commands }}
       run: |
         echo "🔧 Running pre-deploy commands..."
-        export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
-        ${{ inputs.pre-deploy-commands }}
+        export $(grep -v '^#' .kamal/secrets."${IN_ENVIRONMENT}" | xargs)
+        "${IN_PRE_DEPLOY_COMMANDS}"
 
     - name: Deploy with Kamal v1
       id: kamal-deploy
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_KAMAL_CONFIG_PATH: ${{ inputs.kamal-config-path }}
       run: |
-        echo "🚀 Starting Kamal v1 deployment to ${{ inputs.environment }}..."
+        echo "🚀 Starting Kamal v1 deployment to ${IN_ENVIRONMENT}..."
         start_time=$(date +%s)
 
         # Load secrets
-        export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
+        export $(grep -v '^#' .kamal/secrets."${IN_ENVIRONMENT}" | xargs)
 
         # Set deployment flags (v1 syntax)
-        deploy_flags="--verbose -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }}"
+        deploy_flags="--verbose -c ${IN_KAMAL_CONFIG_PATH} -d ${IN_ENVIRONMENT}"
 
         # Run deployment (v1 syntax may differ slightly)
         if kamal deploy $deploy_flags; then
@@ -353,7 +403,7 @@ runs:
           duration=$((end_time - start_time))
 
           # Get deployed version (v1 may have different output format)
-          deployed_version=$(kamal ps -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }} 2>/dev/null | grep -v "CONTAINER" | head -1 | awk '{print $2}' || echo "unknown")
+          deployed_version=$(kamal ps -c "${IN_KAMAL_CONFIG_PATH}" -d "${IN_ENVIRONMENT}" 2>/dev/null | grep -v "CONTAINER" | head -1 | awk '{print $2}' || echo "unknown")
 
           echo "deploy-duration=${duration}" >> $GITHUB_OUTPUT
           echo "deploy-status=success" >> $GITHUB_OUTPUT
@@ -382,25 +432,30 @@ runs:
       if: inputs.enable-health-checks == 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_HEALTH_CHECK_TIMEOUT: ${{ inputs.health-check-timeout }}
+        IN_HEALTH_CHECK_URL: ${{ inputs.health-check-url }}
+        IN_KAMAL_CONFIG_PATH: ${{ inputs.kamal-config-path }}
       run: |
         echo "🏥 Running comprehensive health checks for Kamal v1..."
-        export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
+        export $(grep -v '^#' .kamal/secrets."${IN_ENVIRONMENT}" | xargs)
 
         # Check container status (v1 syntax)
         echo "📊 Checking container status..."
-        if ! kamal ps -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }}; then
+        if ! kamal ps -c "${IN_KAMAL_CONFIG_PATH}" -d "${IN_ENVIRONMENT}"; then
           echo "❌ Container health check failed"
           echo "health-status=failed" >> $GITHUB_OUTPUT
           exit 1
         fi
 
         # Check application health endpoint if provided
-        if [[ -n "${{ inputs.health-check-url }}" ]]; then
-          echo "🔍 Testing health check endpoint: ${{ inputs.health-check-url }}"
-          timeout_seconds=${{ inputs.health-check-timeout }}
+        if [[ -n "${IN_HEALTH_CHECK_URL}" ]]; then
+          echo "🔍 Testing health check endpoint: ${IN_HEALTH_CHECK_URL}"
+          timeout_seconds="${IN_HEALTH_CHECK_TIMEOUT}"
 
           for i in $(seq 1 $((timeout_seconds / 10))); do
-            if curl -f -s "${{ inputs.health-check-url }}" >/dev/null; then
+            if curl -f -s "${IN_HEALTH_CHECK_URL}" >/dev/null; then
               echo "✅ Health check endpoint is responding"
               echo "health-status=passed" >> $GITHUB_OUTPUT
               break
@@ -435,28 +490,34 @@ runs:
       if: inputs.post-deploy-commands != '' && success()
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_POST_DEPLOY_COMMANDS: ${{ inputs.post-deploy-commands }}
       run: |
         echo "🔧 Running post-deploy commands..."
-        export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
-        ${{ inputs.post-deploy-commands }}
+        export $(grep -v '^#' .kamal/secrets."${IN_ENVIRONMENT}" | xargs)
+        "${IN_POST_DEPLOY_COMMANDS}"
 
     - name: Rollback on failure
       id: rollback
       if: failure() && inputs.enable-rollback-on-failure == 'true' && steps.current-deployment.outputs.current-version != 'none'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_KAMAL_CONFIG_PATH: ${{ inputs.kamal-config-path }}
       run: |
         echo "🔄 Performing automatic rollback with Kamal v1..."
-        export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
+        export $(grep -v '^#' .kamal/secrets."${IN_ENVIRONMENT}" | xargs)
 
         # Attempt rollback to previous version (v1 syntax may differ)
-        if kamal rollback -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }}; then
+        if kamal rollback -c "${IN_KAMAL_CONFIG_PATH}" -d "${IN_ENVIRONMENT}"; then
           echo "✅ Rollback completed successfully"
           echo "rollback-performed=true" >> $GITHUB_OUTPUT
 
           # Verify rollback
           sleep 10
-          kamal ps -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }}
+          kamal ps -c "${IN_KAMAL_CONFIG_PATH}" -d "${IN_ENVIRONMENT}"
         else
           echo "❌ Rollback failed or not supported in this version"
           echo "rollback-performed=failed" >> $GITHUB_OUTPUT
@@ -493,11 +554,13 @@ runs:
       if: always()
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
         echo "🧹 Performing cleanup..."
 
         # Remove secrets file
-        rm -f .kamal/secrets.${{ inputs.environment }}
+        rm -f .kamal/secrets."${IN_ENVIRONMENT}"
 
         # Clean up Docker resources if deployment failed
         if [[ "${{ steps.deploy-result.outputs.status }}" != "success" ]]; then

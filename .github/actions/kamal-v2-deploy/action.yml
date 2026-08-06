@@ -100,24 +100,28 @@ runs:
   steps:
     - name: Validate inputs
       shell: bash
+      env:
+        IN_DEPLOYMENT_STRATEGY: ${{ inputs.deployment-strategy }}
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_WORKING_DIRECTORY: ${{ inputs.working-directory }}
       run: |
         echo "🔍 Validating deployment inputs..."
 
         # Validate environment
-        if [[ ! "${{ inputs.environment }}" =~ ^(staging|production)$ ]]; then
+        if [[ ! "${IN_ENVIRONMENT}" =~ ^(staging|production)$ ]]; then
           echo "❌ Error: environment must be either 'staging' or 'production'"
           exit 1
         fi
 
         # Validate deployment strategy
-        if [[ ! "${{ inputs.deployment-strategy }}" =~ ^(rolling|blue-green|immediate)$ ]]; then
+        if [[ ! "${IN_DEPLOYMENT_STRATEGY}" =~ ^(rolling|blue-green|immediate)$ ]]; then
           echo "❌ Error: deployment-strategy must be one of: rolling, blue-green, immediate"
           exit 1
         fi
 
         # Validate working directory exists
-        if [[ ! -d "${{ inputs.working-directory }}" ]]; then
-          echo "❌ Error: working-directory '${{ inputs.working-directory }}' does not exist"
+        if [[ ! -d "${IN_WORKING_DIRECTORY}" ]]; then
+          echo "❌ Error: working-directory '${IN_WORKING_DIRECTORY}' does not exist"
           exit 1
         fi
 
@@ -125,6 +129,8 @@ runs:
 
     - name: Validate required environment variables
       shell: bash
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
         echo "🔧 Validating required environment variables for Kamal v2 deployment..."
         
@@ -151,7 +157,7 @@ runs:
           echo "❌ Error: Missing required environment variables:"
           printf '  - %s\n' "${missing_vars[@]}"
           echo ""
-          echo "Please add these secrets to your GitHub environment (${{ inputs.environment }})"
+          echo "Please add these secrets to your GitHub environment (${IN_ENVIRONMENT})"
           exit 1
         fi
 
@@ -185,9 +191,11 @@ runs:
 
     - name: Install Kamal
       shell: bash
+      env:
+        IN_KAMAL_VERSION: ${{ inputs.kamal-version }}
       run: |
-        echo "🚢 Installing Kamal v${{ inputs.kamal-version }}..."
-        gem install kamal -v ${{ inputs.kamal-version }}
+        echo "🚢 Installing Kamal v${IN_KAMAL_VERSION}..."
+        gem install kamal -v "${IN_KAMAL_VERSION}"
         kamal version
 
     - name: Set up SSH
@@ -217,6 +225,9 @@ runs:
     - name: Create Kamal secrets file
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_DATABASE_PORT: ${{ inputs.database-port }}
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
         echo "📝 Creating Kamal secrets file from environment variables..."
         
@@ -225,7 +236,7 @@ runs:
         
         # Create secrets file from environment variables (same approach as working Nuxt action)
         if [[ -f ".kamal/secrets-common" ]]; then
-          cp .kamal/secrets-common .kamal/secrets.${{ inputs.environment }}
+          cp .kamal/secrets-common .kamal/secrets."${IN_ENVIRONMENT}"
           
           # Replace environment variable references with actual values (safer approach)
           temp_file=$(mktemp)
@@ -255,18 +266,18 @@ runs:
           done < .kamal/secrets-common
           
           # Replace the original file
-          mv "$temp_file" .kamal/secrets.${{ inputs.environment }}
+          mv "$temp_file" .kamal/secrets."${IN_ENVIRONMENT}"
           
           # Handle DATABASE_PORT with fallback to default
-          if grep -q "DATABASE_PORT=" .kamal/secrets.${{ inputs.environment }}; then
+          if grep -q "DATABASE_PORT=" .kamal/secrets."${IN_ENVIRONMENT}"; then
             if [[ -z "${DATABASE_PORT}" ]]; then
-              sed -i "s|DATABASE_PORT=|DATABASE_PORT=${{ inputs.database-port }}|g" .kamal/secrets.${{ inputs.environment }}
-              echo "✅ Using default DATABASE_PORT: ${{ inputs.database-port }}"
+              sed -i "s|DATABASE_PORT=|DATABASE_PORT=${IN_DATABASE_PORT}|g" .kamal/secrets."${IN_ENVIRONMENT}"
+              echo "✅ Using default DATABASE_PORT: ${IN_DATABASE_PORT}"
             fi
           fi
           
           # Secure the secrets file
-          chmod 600 .kamal/secrets.${{ inputs.environment }}
+          chmod 600 .kamal/secrets."${IN_ENVIRONMENT}"
           echo "✅ Kamal secrets file created successfully from template"
         else
           echo "❌ Error: .kamal/secrets-common template not found"
@@ -278,13 +289,16 @@ runs:
       id: current-deployment
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_KAMAL_CONFIG_PATH: ${{ inputs.kamal-config-path }}
       run: |
         echo "📋 Getting current deployment information..."
-        export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
+        export $(grep -v '^#' .kamal/secrets."${IN_ENVIRONMENT}" | xargs)
 
         # Get current version/container info for potential rollback
-        if kamal ps -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }} 2>/dev/null; then
-          current_containers=$(kamal ps -c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }} 2>/dev/null | grep -v "CONTAINER" | head -1 | awk '{print $2}' || echo "none")
+        if kamal ps -c "${IN_KAMAL_CONFIG_PATH}" -d "${IN_ENVIRONMENT}" 2>/dev/null; then
+          current_containers=$(kamal ps -c "${IN_KAMAL_CONFIG_PATH}" -d "${IN_ENVIRONMENT}" 2>/dev/null | grep -v "CONTAINER" | head -1 | awk '{print $2}' || echo "none")
           echo "current-version=${current_containers}" >> $GITHUB_OUTPUT
           echo "ℹ️ Current running containers: ${current_containers}"
         else
@@ -296,9 +310,11 @@ runs:
       if: inputs.maintenance-mode == 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
         echo "🚧 Enabling maintenance mode..."
-        export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
+        export $(grep -v '^#' .kamal/secrets."${IN_ENVIRONMENT}" | xargs)
 
         # Create a simple maintenance page if it doesn't exist
         if [[ ! -f "public/maintenance.html" ]]; then
@@ -325,42 +341,49 @@ runs:
       if: inputs.pre-deploy-commands != ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_PRE_DEPLOY_COMMANDS: ${{ inputs.pre-deploy-commands }}
       run: |
         echo "🔧 Running pre-deploy commands..."
-        export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
-        ${{ inputs.pre-deploy-commands }}
+        export $(grep -v '^#' .kamal/secrets."${IN_ENVIRONMENT}" | xargs)
+        "${IN_PRE_DEPLOY_COMMANDS}"
 
     - name: Deploy with Kamal v2
       id: kamal-deploy
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_DEPLOYMENT_STRATEGY: ${{ inputs.deployment-strategy }}
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_KAMAL_CONFIG_PATH: ${{ inputs.kamal-config-path }}
       run: |
-        echo "🚀 Starting Kamal v2 deployment to ${{ inputs.environment }}..."
+        echo "🚀 Starting Kamal v2 deployment to ${IN_ENVIRONMENT}..."
 
         # Load secrets
-        export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
+        export $(grep -v '^#' .kamal/secrets."${IN_ENVIRONMENT}" | xargs)
 
         # Set deployment flags
-        deploy_flags="-c ${{ inputs.kamal-config-path }} -d ${{ inputs.environment }}"
+        deploy_flags="-c ${IN_KAMAL_CONFIG_PATH} -d ${IN_ENVIRONMENT}"
 
         # Add verbose flag if needed
-        if [[ "${{ inputs.deployment-strategy }}" != "immediate" ]]; then
+        if [[ "${IN_DEPLOYMENT_STRATEGY}" != "immediate" ]]; then
           deploy_flags="$deploy_flags --verbose"
         fi
 
         # Run deployment
         if kamal deploy $deploy_flags; then
-          echo "✅ Kamal v2 deployment completed successfully for ${{ inputs.environment }}"
+          echo "✅ Kamal v2 deployment completed successfully for ${IN_ENVIRONMENT}"
           echo "deploy_status=success" >> $GITHUB_OUTPUT
 
           # Get deployed version
-          deployed_version=$(kamal app version -d ${{ inputs.environment }} 2>/dev/null | tail -n1 | tr -d '\n\r' | sed 's/[^a-zA-Z0-9._-]//g' || echo "unknown")
+          deployed_version=$(kamal app version -d "${IN_ENVIRONMENT}" 2>/dev/null | tail -n1 | tr -d '\n\r' | sed 's/[^a-zA-Z0-9._-]//g' || echo "unknown")
           if [[ -z "$deployed_version" || "$deployed_version" == *"INFO"* ]]; then
             deployed_version="unknown"
           fi
           echo "deployed_version=${deployed_version}" >> $GITHUB_OUTPUT
         else
-          echo "❌ Kamal v2 deployment failed for ${{ inputs.environment }}"
+          echo "❌ Kamal v2 deployment failed for ${IN_ENVIRONMENT}"
           echo "deploy_status=failed" >> $GITHUB_OUTPUT
           echo "deployed_version=failed" >> $GITHUB_OUTPUT
           exit 1
@@ -377,15 +400,17 @@ runs:
       if: steps.kamal-deploy.outputs.deploy_status == 'success' && inputs.health-check-enabled == 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
         echo "✅ Kamal deployment completed successfully"
         echo "🔍 Deployment verification:"
         
         # Load secrets for any needed commands
-        export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
+        export $(grep -v '^#' .kamal/secrets."${IN_ENVIRONMENT}" | xargs)
         
         # Quick verification that deployment finished
-        if kamal app details -d ${{ inputs.environment }} 2>/dev/null | grep -q "CONTAINER ID"; then
+        if kamal app details -d "${IN_ENVIRONMENT}" 2>/dev/null | grep -q "CONTAINER ID"; then
           echo "✅ Application containers are present"
           echo "health-status=passed" >> $GITHUB_OUTPUT
         else
@@ -406,10 +431,13 @@ runs:
       if: inputs.post-deploy-commands != '' && success()
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_POST_DEPLOY_COMMANDS: ${{ inputs.post-deploy-commands }}
       run: |
         echo "🔧 Running post-deploy commands..."
-        export $(grep -v '^#' .kamal/secrets.${{ inputs.environment }} | xargs)
-        ${{ inputs.post-deploy-commands }}
+        export $(grep -v '^#' .kamal/secrets."${IN_ENVIRONMENT}" | xargs)
+        "${IN_POST_DEPLOY_COMMANDS}"
 
     - name: Handle deployment failure (simplified)
       id: rollback
@@ -449,11 +477,13 @@ runs:
       if: always()
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
         echo "🧹 Performing cleanup..."
 
         # Remove secrets file
-        rm -f .kamal/secrets.${{ inputs.environment }}
+        rm -f .kamal/secrets."${IN_ENVIRONMENT}"
 
         # Clean up Docker resources if deployment failed
         if [[ "${{ steps.deploy-result.outputs.status }}" != "success" ]]; then

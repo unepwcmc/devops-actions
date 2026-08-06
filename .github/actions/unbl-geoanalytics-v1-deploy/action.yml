@@ -71,14 +71,21 @@ runs:
 
     - name: Deploy geoanalytics services (per-service deployment)
       shell: bash
+      env:
+        IN_DEPLOY_EXACTEXTRACT: ${{ inputs.deploy-exactextract }}
+        IN_DEPLOY_PRETILER: ${{ inputs.deploy-pretiler }}
+        IN_DEPLOY_SHARED_INFRA: ${{ inputs.deploy-shared-infra }}
+        IN_DEPLOY_STACMAN: ${{ inputs.deploy-stacman }}
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_LOCATION: ${{ inputs.location }}
       run: |
         set -euo pipefail
 
         # Deploy shared infrastructure if requested
-        if [ "${{ inputs.deploy-shared-infra }}" == "true" ]; then
+        if [ "${IN_DEPLOY_SHARED_INFRA}" == "true" ]; then
           echo "Deploying shared infrastructure..."
           INFRA_BICEP="./unbl-geoanalytics/azure/bicep/shared-infra.bicep"
-          INFRA_PARAMS="./unbl-geoanalytics/azure/bicep/parameters/shared-infra.${{ inputs.environment }}.json"
+          INFRA_PARAMS="./unbl-geoanalytics/azure/bicep/parameters/shared-infra.${IN_ENVIRONMENT}.json"
           
           if [ ! -f "$INFRA_PARAMS" ]; then
             echo "Warning: Parameters file not found: $INFRA_PARAMS"
@@ -86,9 +93,9 @@ runs:
             INFRA_PARAMS="./unbl-geoanalytics/azure/bicep/parameters/shared-infra.staging.json"
           fi
           
-          DEPLOYMENT_NAME="geoanalytics-infra-${{ inputs.environment }}-$(date +%Y%m%d%H%M%S)"
+          DEPLOYMENT_NAME="geoanalytics-infra-${IN_ENVIRONMENT}-$(date +%Y%m%d%H%M%S)"
           az deployment sub create \
-            --location "${{ inputs.location }}" \
+            --location "${IN_LOCATION}" \
             --name "$DEPLOYMENT_NAME" \
             --template-file "$INFRA_BICEP" \
             --parameters @"$INFRA_PARAMS" \
@@ -97,49 +104,49 @@ runs:
         fi
 
         # Deploy stacman if requested
-        if [ "${{ inputs.deploy-stacman }}" == "true" ]; then
+        if [ "${IN_DEPLOY_STACMAN}" == "true" ]; then
           echo "Deploying stacman service..."
           chmod +x ./unbl-geoanalytics/stacman/azure/scripts/deploy.sh
           cd ./unbl-geoanalytics/stacman
           SKIP_INFRA_FLAG=""
-          if [ "${{ inputs.deploy-shared-infra }}" != "true" ]; then
+          if [ "${IN_DEPLOY_SHARED_INFRA}" != "true" ]; then
             SKIP_INFRA_FLAG="--skip-infra"
           fi
           ./azure/scripts/deploy.sh \
-            --environment "${{ inputs.environment }}" \
-            --location "${{ inputs.location }}" \
+            --environment "${IN_ENVIRONMENT}" \
+            --location "${IN_LOCATION}" \
             $SKIP_INFRA_FLAG
           cd ../..
         fi
 
         # Deploy pretiler if requested
-        if [ "${{ inputs.deploy-pretiler }}" == "true" ]; then
+        if [ "${IN_DEPLOY_PRETILER}" == "true" ]; then
           echo "Deploying pretiler service..."
           chmod +x ./unbl-geoanalytics/pretiler/azure/scripts/deploy.sh
           cd ./unbl-geoanalytics/pretiler
           SKIP_INFRA_FLAG=""
-          if [ "${{ inputs.deploy-shared-infra }}" != "true" ]; then
+          if [ "${IN_DEPLOY_SHARED_INFRA}" != "true" ]; then
             SKIP_INFRA_FLAG="--skip-infra"
           fi
           ./azure/scripts/deploy.sh \
-            --environment "${{ inputs.environment }}" \
-            --location "${{ inputs.location }}" \
+            --environment "${IN_ENVIRONMENT}" \
+            --location "${IN_LOCATION}" \
             $SKIP_INFRA_FLAG
           cd ../..
         fi
 
         # Deploy exactextract if requested
-        if [ "${{ inputs.deploy-exactextract }}" == "true" ]; then
+        if [ "${IN_DEPLOY_EXACTEXTRACT}" == "true" ]; then
           echo "Deploying exactextract service..."
           chmod +x ./unbl-geoanalytics/exactextract/azure/scripts/deploy.sh
           cd ./unbl-geoanalytics/exactextract
           SKIP_INFRA_FLAG=""
-          if [ "${{ inputs.deploy-shared-infra }}" != "true" ]; then
+          if [ "${IN_DEPLOY_SHARED_INFRA}" != "true" ]; then
             SKIP_INFRA_FLAG="--skip-infra"
           fi
           ./azure/scripts/deploy.sh \
-            --environment "${{ inputs.environment }}" \
-            --location "${{ inputs.location }}" \
+            --environment "${IN_ENVIRONMENT}" \
+            --location "${IN_LOCATION}" \
             $SKIP_INFRA_FLAG
           cd ../..
         fi

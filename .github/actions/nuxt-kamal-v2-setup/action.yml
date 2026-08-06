@@ -64,18 +64,21 @@ runs:
   steps:
     - name: Validate inputs and environment
       shell: bash
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_WORKING_DIRECTORY: ${{ inputs.working-directory }}
       run: |
         echo "🔍 Validating Nuxt Kamal v2 setup inputs..."
 
         # Validate environment
-        if [[ ! "${{ inputs.environment }}" =~ ^(staging|production)$ ]]; then
+        if [[ ! "${IN_ENVIRONMENT}" =~ ^(staging|production)$ ]]; then
           echo "❌ Error: environment must be either 'staging' or 'production'"
           exit 1
         fi
 
         # Validate working directory
-        if [[ ! -d "${{ inputs.working-directory }}" ]]; then
-          echo "❌ Error: working-directory '${{ inputs.working-directory }}' does not exist"
+        if [[ ! -d "${IN_WORKING_DIRECTORY}" ]]; then
+          echo "❌ Error: working-directory '${IN_WORKING_DIRECTORY}' does not exist"
           exit 1
         fi
 
@@ -83,6 +86,8 @@ runs:
 
     - name: Validate required environment variables
       shell: bash
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
         echo "🔧 Validating required environment variables..."
         
@@ -109,7 +114,7 @@ runs:
           echo "     uses: unepwcmc/devops-actions/.github/actions/validate-secrets@v1"
           echo "     with:"
           echo "       secrets-file: '.kamal/secrets-common'"
-          echo "       environment: '${{ inputs.environment }}'"
+          echo "       environment: '${IN_ENVIRONMENT}'"
           exit 1
         fi
 
@@ -144,9 +149,11 @@ runs:
 
     - name: Install Kamal v2
       shell: bash
+      env:
+        IN_KAMAL_VERSION: ${{ inputs.kamal-version }}
       run: |
-        echo "🚢 Installing Kamal v${{ inputs.kamal-version }}..."
-        gem install kamal -v ${{ inputs.kamal-version }}
+        echo "🚢 Installing Kamal v${IN_KAMAL_VERSION}..."
+        gem install kamal -v "${IN_KAMAL_VERSION}"
         kamal version
         echo "✅ Kamal v2 installed successfully"
 
@@ -158,13 +165,15 @@ runs:
     - name: Test SSH connection
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
         echo "🔐 Testing SSH connection to deployment servers..."
         
         # Try to extract server info from Kamal config for testing
-        if command -v kamal &> /dev/null && [[ -f "config/deploy.${{ inputs.environment }}.yml" || -f "config/deploy.yml" ]]; then
+        if command -v kamal &> /dev/null && [[ -f "config/deploy.${IN_ENVIRONMENT}.yml" || -f "config/deploy.yml" ]]; then
           # Test SSH connectivity using Kamal
-          if kamal server exec --destination ${{ inputs.environment }} "echo 'SSH connection successful'" 2>/dev/null; then
+          if kamal server exec --destination "${IN_ENVIRONMENT}" "echo 'SSH connection successful'" 2>/dev/null; then
             echo "✅ SSH connection test successful"
           else
             echo "⚠️  SSH connectivity test failed - this may affect setup"
@@ -192,11 +201,13 @@ runs:
     - name: Validate project configuration
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
         echo "🔍 Validating project Kamal configuration..."
 
         # Check for Kamal configuration file
-        config_file="config/deploy.${{ inputs.environment }}.yml"
+        config_file="config/deploy.${IN_ENVIRONMENT}.yml"
         fallback_config="config/deploy.yml"
 
         if [[ -f "$config_file" ]]; then
@@ -255,14 +266,16 @@ runs:
     - name: Validate Kamal configuration syntax
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
         echo "🔧 Validating Kamal v2 configuration syntax..."
         
-        if kamal config --destination ${{ inputs.environment }} 2>/dev/null; then
-          echo "✅ Kamal v2 configuration is valid for ${{ inputs.environment }}"
+        if kamal config --destination "${IN_ENVIRONMENT}" 2>/dev/null; then
+          echo "✅ Kamal v2 configuration is valid for ${IN_ENVIRONMENT}"
         else
-          echo "❌ Error: Kamal v2 configuration has syntax errors for ${{ inputs.environment }}"
-          echo "Please check your config/deploy.${{ inputs.environment }}.yml file"
+          echo "❌ Error: Kamal v2 configuration has syntax errors for ${IN_ENVIRONMENT}"
+          echo "Please check your config/deploy.${IN_ENVIRONMENT}.yml file"
           exit 1
         fi
 
@@ -270,35 +283,41 @@ runs:
       if: inputs.pre-setup-commands != ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_PRE_SETUP_COMMANDS: ${{ inputs.pre-setup-commands }}
       run: |
         echo "🔧 Running pre-setup commands..."
-        ${{ inputs.pre-setup-commands }}
+        "${IN_PRE_SETUP_COMMANDS}"
         echo "✅ Pre-setup commands completed"
 
     - name: Run Kamal v2 setup
       id: kamal-setup
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
+        IN_ROLLBACK_ON_FAILURE: ${{ inputs.rollback-on-failure }}
+        IN_SETUP_VERBOSE: ${{ inputs.setup-verbose }}
       run: |
-        echo "🚀 Running Kamal v2 setup for ${{ inputs.environment }} environment..."
+        echo "🚀 Running Kamal v2 setup for ${IN_ENVIRONMENT} environment..."
 
         # Set verbose flag
         verbose_flag=""
-        if [[ "${{ inputs.setup-verbose }}" == "true" ]]; then
+        if [[ "${IN_SETUP_VERBOSE}" == "true" ]]; then
           verbose_flag="--verbose"
         fi
 
         # Perform Kamal v2 setup with environment-specific destination
-        if kamal setup --destination ${{ inputs.environment }} $verbose_flag; then
-          echo "✅ Kamal v2 setup completed successfully for ${{ inputs.environment }}"
+        if kamal setup --destination "${IN_ENVIRONMENT}" $verbose_flag; then
+          echo "✅ Kamal v2 setup completed successfully for ${IN_ENVIRONMENT}"
           echo "setup_status=success" >> $GITHUB_OUTPUT
         else
-          echo "❌ Kamal v2 setup failed for ${{ inputs.environment }}"
+          echo "❌ Kamal v2 setup failed for ${IN_ENVIRONMENT}"
           echo "setup_status=failed" >> $GITHUB_OUTPUT
 
-          if [[ "${{ inputs.rollback-on-failure }}" == "true" ]]; then
+          if [[ "${IN_ROLLBACK_ON_FAILURE}" == "true" ]]; then
             echo "🔄 Attempting rollback due to setup failure..."
-            kamal rollback --destination ${{ inputs.environment }} || echo "⚠️  Rollback failed or not applicable"
+            kamal rollback --destination "${IN_ENVIRONMENT}" || echo "⚠️  Rollback failed or not applicable"
           fi
 
           exit 1
@@ -308,32 +327,38 @@ runs:
       if: inputs.health-check-enabled == 'true'
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_ENVIRONMENT: ${{ inputs.environment }}
       run: |
-        echo "🏥 Performing post-setup health checks for ${{ inputs.environment }}..."
+        echo "🏥 Performing post-setup health checks for ${IN_ENVIRONMENT}..."
 
         # Check if services are running (Kamal v2 syntax with environment)
-        if kamal app details --destination ${{ inputs.environment }} 2>/dev/null; then
-          echo "✅ Application services are running in ${{ inputs.environment }}"
+        if kamal app details --destination "${IN_ENVIRONMENT}" 2>/dev/null; then
+          echo "✅ Application services are running in ${IN_ENVIRONMENT}"
         else
-          echo "⚠️  Warning: Could not verify application services status for ${{ inputs.environment }}"
+          echo "⚠️  Warning: Could not verify application services status for ${IN_ENVIRONMENT}"
         fi
 
         # Additional health checks can be added here
-        echo "✅ Health checks completed for ${{ inputs.environment }}"
+        echo "✅ Health checks completed for ${IN_ENVIRONMENT}"
 
     - name: Run post-setup commands
       if: inputs.post-setup-commands != ''
       shell: bash
       working-directory: ${{ inputs.working-directory }}
+      env:
+        IN_POST_SETUP_COMMANDS: ${{ inputs.post-setup-commands }}
       run: |
         echo "🔧 Running post-setup commands..."
-        ${{ inputs.post-setup-commands }}
+        "${IN_POST_SETUP_COMMANDS}"
         echo "✅ Post-setup commands completed"
 
     - name: Set end time and calculate duration
       id: setup-result
       if: always()
       shell: bash
+      env:
+        IN_KAMAL_VERSION: ${{ inputs.kamal-version }}
       run: |
         end_time=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
         echo "end-time=${end_time}" >> $GITHUB_OUTPUT
@@ -344,7 +369,7 @@ runs:
         duration=$((end_timestamp - start_timestamp))
 
         echo "duration=${duration}" >> $GITHUB_OUTPUT
-        echo "kamal-version=${{ inputs.kamal-version }}" >> $GITHUB_OUTPUT
+        echo "kamal-version=${IN_KAMAL_VERSION}" >> $GITHUB_OUTPUT
 
         if [[ "${{ steps.kamal-setup.outputs.setup_status }}" == "success" ]]; then
           echo "status=success" >> $GITHUB_OUTPUT
