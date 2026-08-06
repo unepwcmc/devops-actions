@@ -207,7 +207,7 @@ runs:
         DATABASE_PASSWORD: ${{ inputs.database-password }}
 
     - name: Set up Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v5
       with:
         node-version: ${{ inputs.node-version }}
 
@@ -259,7 +259,7 @@ runs:
         kamal version
 
     - name: Set up SSH
-      uses: webfactory/ssh-agent@v0.9.0
+      uses: webfactory/ssh-agent@v0.10.0
       with:
         ssh-private-key: ${{ inputs.ssh-private-key }}
 
@@ -283,9 +283,7 @@ runs:
         WEB_SERVER_DNS_NAME: ${{ env.WEB_SERVER_DNS_NAME }}
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-      with:
-        install: true
+      uses: docker/setup-buildx-action@v4
 
     - name: Create environment-specific .env file
       shell: bash

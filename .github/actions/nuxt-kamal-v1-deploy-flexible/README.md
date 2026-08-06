@@ -174,7 +174,7 @@ jobs:
     
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Deploy Nuxt Frontend
         uses: unep-wcmc/devops-actions/.github/actions/nuxt-kamal-v1-deploy-flexible@main
@@ -199,7 +199,7 @@ jobs:
 **Before** (manual):
 ```yaml
 - name: Set up Node.js
-  uses: actions/setup-node@v3
+  uses: actions/setup-node@v5
   with:
     node-version: "22.3.0"
 
@@ -215,7 +215,7 @@ jobs:
   run: gem install kamal -v 1.4.0
 
 - name: Set up SSH
-  uses: webfactory/ssh-agent@v0.5.3
+  uses: webfactory/ssh-agent@v0.10.0
   with:
     ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 

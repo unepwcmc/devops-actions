@@ -161,7 +161,7 @@ jobs:
     
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # Step 1: Validate and populate ALL Kamal secrets
       - name: Validate and Populate Secrets

@@ -44,13 +44,16 @@ runs:
       env:
         IN_ENVIRONMENT: ${{ inputs.environment }}
         IN_SECRETS_FILE: ${{ inputs.secrets-file }}
+        # Step outputs are substituted as text into the script just like inputs
+        # are, so this is read from the environment rather than interpolated.
+        REQUIRED_VARS: ${{ steps.extract-vars.outputs.required_vars }}
       run: |
         # Read required variables from previous step
         while IFS= read -r var; do
           if [ -z "$var" ]; then
             continue
           fi
-          
+
           # Check if the variable is set in GitHub secrets
           if [ -z "${!var}" ]; then
             echo "::error::Missing required secret: $var"
@@ -58,7 +61,7 @@ runs:
             echo "You can find the required format in ${IN_SECRETS_FILE}"
             MISSING_VARS=true
           fi
-        done <<< "${{ steps.extract-vars.outputs.required_vars }}"
+        done <<< "${REQUIRED_VARS}"
         
         if [ "$MISSING_VARS" = true ]; then
           exit 1
@@ -66,13 +69,15 @@ runs:
 
     - name: Populate environment variables
       shell: bash
+      env:
+        REQUIRED_VARS: ${{ steps.extract-vars.outputs.required_vars }}
       run: |
         # Instead of sourcing the template file, we'll export the existing environment variables
         # The secrets are already available as environment variables from the workflow
-        
+
         echo "✅ All required secrets are validated and available as environment variables"
         echo "The following variables have been validated:"
-        
+
         while IFS= read -r var; do
           if [ -z "$var" ]; then
             continue
@@ -80,4 +85,4 @@ runs:
           if [ -n "${!var}" ]; then
             echo "  ✅ $var is set"
           fi
-        done <<< "${{ steps.extract-vars.outputs.required_vars }}" 
+        done <<< "${REQUIRED_VARS}" 

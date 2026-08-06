@@ -167,7 +167,7 @@ git commit -m "Update deploy dependencies"
 
 If you see an error about the working directory not existing:
 - Verify the `working-directory` input matches your project structure
-- Ensure you've checked out the repository in your workflow (use `actions/checkout@v4`)
+- Ensure you've checked out the repository in your workflow (use `actions/checkout@v5`)
 
 ## Differences from kamal-v2-deploy
 
@@ -197,7 +197,7 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
       
       - name: Deploy with Kamal v2.x
         uses: unepwcmc/devops-actions/.github/actions/kamal-v2.x-deploy@v1

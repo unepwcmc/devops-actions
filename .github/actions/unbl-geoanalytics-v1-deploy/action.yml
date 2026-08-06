@@ -57,7 +57,7 @@ runs:
       run: echo "start_time=$(date +%s)" >> "$GITHUB_OUTPUT"
 
     - name: Checkout geoanalytics repo
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         repository: unepwcmc/unbl-geoanalytics
         ref: ${{ inputs.geoanalytics-ref }}
@@ -65,7 +65,7 @@ runs:
         token: ${{ env.GH_TOKEN }}
 
     - name: Azure Login
-      uses: azure/login@v1
+      uses: azure/login@v3
       with:
         creds: ${{ inputs.azure-credentials }}
 

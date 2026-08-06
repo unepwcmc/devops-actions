@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       
       - name: Validate and Populate Secrets
         uses: unepwcmc/devops-actions/.github/actions/validate-secrets@v1
@@ -77,7 +77,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       
       - name: Validate and Populate Secrets
         uses: unepwcmc/devops-actions/.github/actions/validate-secrets@v1
@@ -144,7 +144,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ needs.determine-environment.outputs.environment }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       
       - name: Setup Kamal
         uses: unepwcmc/devops-actions/.github/actions/kamal-v2-setup@v1

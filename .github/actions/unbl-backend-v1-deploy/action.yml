@@ -48,7 +48,7 @@ runs:
       run: echo "start_time=$(date +%s)" >> $GITHUB_OUTPUT
 
     - name: Checkout services repo
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         repository: unepwcmc/unbl-services
         ref: ${{ inputs.services-ref }}
@@ -56,7 +56,7 @@ runs:
         token: ${{ env.GH_TOKEN }}
 
     - name: Checkout infrastructure repo
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         repository: unepwcmc/unbl-infrastructure
         ref: ${{ inputs.infrastructure-ref }}
@@ -64,7 +64,7 @@ runs:
         token: ${{ env.GH_TOKEN }}
 
     - name: Azure Login
-      uses: azure/login@v1
+      uses: azure/login@v3
       with:
         creds: ${{ inputs.azure-credentials }}
 
