@@ -44,16 +44,28 @@ runs:
         # Reading the left-hand side would demand a MYSQL_PASSWORD secret that is
         # not supposed to exist, so read the referenced variable instead.
         # Lines with a literal value (no $) need nothing from the environment.
+        #
+        # A file may legitimately require nothing at all - target-tracker's
+        # nuxt/.kamal/secrets-common is entirely comments. Composite steps run
+        # under `-e -o pipefail`, so a grep matching nothing would abort the
+        # step; `|| true` keeps an empty result a valid answer.
         REQUIRED_VARS=$(
-          tr -d '\r' < "${IN_SECRETS_FILE}" \
-          | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
-          | grep -v '^#' | grep -v '^$' | grep '=' \
-          | sed -e 's/^[^=]*=//' \
-          | grep '^\$' \
-          | grep -v '^\$(' \
-          | sed -e 's/^\${\([A-Za-z_][A-Za-z0-9_]*\).*/\1/' -e 's/^\$\([A-Za-z_][A-Za-z0-9_]*\).*/\1/' \
-          | sort -u
+          {
+            tr -d '\r' < "${IN_SECRETS_FILE}" \
+            | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+            | grep -v '^#' | grep -v '^$' | grep '=' \
+            | sed -e 's/^[^=]*=//' \
+            | grep '^\$' \
+            | grep -v '^\$(' \
+            | sed -e 's/^\${\([A-Za-z_][A-Za-z0-9_]*\).*/\1/' -e 's/^\$\([A-Za-z_][A-Za-z0-9_]*\).*/\1/' \
+            | sort -u
+          } || true
         )
+
+        if [ -z "${REQUIRED_VARS}" ]; then
+          echo "ℹ️  ${IN_SECRETS_FILE} references no environment variables - nothing to validate"
+        fi
+
         echo "required_vars<<EOF" >> $GITHUB_OUTPUT
         echo "$REQUIRED_VARS" >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
