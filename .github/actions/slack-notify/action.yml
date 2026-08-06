@@ -201,16 +201,47 @@ runs:
             ;;
         esac
 
+    - name: Build Slack payload
+      id: payload
+      shell: bash
+      env:
+        TEMPLATE_DIR: ${{ github.action_path }}/templates
+        TEMPLATE_NAME: ${{ steps.template.outputs.template }}
+        SLACK_CHANNEL_ID: ${{ inputs.slack-channel-id }}
+        UPDATE_TS: ${{ inputs.update-ts || inputs.update-message-ts }}
+      run: |
+        set -euo pipefail
+
+        template="${TEMPLATE_DIR}/${TEMPLATE_NAME}"
+        if [ ! -f "${template}" ]; then
+          echo "::error::Slack payload template not found: ${TEMPLATE_NAME}"
+          exit 1
+        fi
+
+        # slack-github-action v2 dropped the channel-id and update-ts inputs.
+        # Both now travel inside the payload, and the method chooses between
+        # posting a new message and updating an existing one.
+        payload="${RUNNER_TEMP}/slack-payload-${TEMPLATE_NAME}"
+        if [ -n "${UPDATE_TS}" ]; then
+          jq --arg channel "${SLACK_CHANNEL_ID}" --arg ts "${UPDATE_TS}" \
+             '. + {channel: $channel, ts: $ts}' "${template}" > "${payload}"
+          echo "method=chat.update" >> "$GITHUB_OUTPUT"
+        else
+          jq --arg channel "${SLACK_CHANNEL_ID}" \
+             '. + {channel: $channel}' "${template}" > "${payload}"
+          echo "method=chat.postMessage" >> "$GITHUB_OUTPUT"
+        fi
+        echo "path=${payload}" >> "$GITHUB_OUTPUT"
+
     - name: Send Slack notification
       id: slack-notification
-      uses: slackapi/slack-github-action@v1.26.0
+      uses: slackapi/slack-github-action@v4
       with:
-        channel-id: ${{ inputs.slack-channel-id }}
-        payload-file-path: ${{ github.action_path }}/templates/${{ steps.template.outputs.template }}
-        payload-file-path-parsed: true
-        update-ts: ${{ inputs.update-ts || inputs.update-message-ts }}
+        method: ${{ steps.payload.outputs.method }}
+        token: ${{ inputs.slack-bot-token }}
+        payload-file-path: ${{ steps.payload.outputs.path }}
+        payload-templated: true
       env:
-        SLACK_BOT_TOKEN: ${{ inputs.slack-bot-token }}
         REPOSITORY: ${{ inputs.repository }}
         REPOSITORY_URL: ${{ inputs.repository-url }}
         RUNNER_NAME: ${{ inputs.runner-name }}
