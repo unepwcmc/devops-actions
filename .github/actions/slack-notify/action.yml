@@ -77,6 +77,10 @@ inputs:
   kamal-version:
     description: 'Kamal version being used'
     required: false
+  deployment-url:
+    description: 'URL of what was deployed. Shown on the message as a "Site" line and an "Open site" button.'
+    required: false
+    default: ''
 
 outputs:
   message-ts:
@@ -209,6 +213,7 @@ runs:
         TEMPLATE_NAME: ${{ steps.template.outputs.template }}
         SLACK_CHANNEL_ID: ${{ inputs.slack-channel-id }}
         UPDATE_TS: ${{ inputs.update-ts || inputs.update-message-ts }}
+        DEPLOYMENT_URL: ${{ inputs.deployment-url }}
       run: |
         set -euo pipefail
 
@@ -230,6 +235,24 @@ runs:
           jq --arg channel "${SLACK_CHANNEL_ID}" \
              '. + {channel: $channel}' "${template}" > "${payload}"
           echo "method=chat.postMessage" >> "$GITHUB_OUTPUT"
+        fi
+        # Where to look at what was deployed: a "Site" field in the first
+        # section and a button beside the run link. Only an http(s) URL is
+        # accepted, and it enters the payload through jq, never as template text.
+        if [[ "${DEPLOYMENT_URL:-}" =~ ^https?://[^[:space:]\<\>\|]+$ ]]; then
+          jq --arg url "${DEPLOYMENT_URL}" '
+            (.blocks |= (
+              (map(select(.type == "section" and has("fields"))) | length) as $n
+              | if $n > 0
+                then (first(to_entries[] | select(.value.type == "section" and (.value | has("fields")))) | .key) as $i
+                     | .[$i].fields += [{type: "mrkdwn", text: ("*Site*\n<" + $url + ">")}]
+                else . end
+              | map(if .type == "actions"
+                    then .elements += [{type: "button", text: {type: "plain_text", text: "Open site", emoji: true}, url: $url}]
+                    else . end)
+            ))' "${payload}" > "${payload}.url" && mv "${payload}.url" "${payload}"
+        elif [ -n "${DEPLOYMENT_URL:-}" ]; then
+          echo "::warning::deployment-url is not an http(s) URL; left off the Slack message"
         fi
         echo "path=${payload}" >> "$GITHUB_OUTPUT"
 
