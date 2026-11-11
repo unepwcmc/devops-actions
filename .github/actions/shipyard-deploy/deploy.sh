@@ -82,15 +82,17 @@ if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
   fail "Shipyard refused the deploy (HTTP $code): $(json "$work/body.json" error "no reason given")" refused
 fi
 
-run_id="$(json "$work/body.json" id)"
-echo "run-id=$run_id" >> "$GITHUB_OUTPUT"
-echo "Shipyard run $run_id accepted for $(json "$work/body.json" shipyard "this app")"
-
-if [ "$SY_DRY_RUN" = "true" ] && [ "$(json "$work/body.json" plan)" != "" ]; then
-  { echo "### Shipyard dry run"; echo; echo '```json'; json "$work/body.json" plan; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+# A dry run is answered straight away with the plan; nothing is deployed.
+if [ "$SY_DRY_RUN" = "true" ]; then
+  echo "Dry run for $(json "$work/body.json" shipyard "this app"): nothing deployed."
+  { echo "### Shipyard dry run: $(json "$work/body.json" shipyard)"; echo; echo '```json'; python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1])).get("result"), indent=2))' "$work/body.json"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
   echo "status=success" >> "$GITHUB_OUTPUT"
   exit 0
 fi
+
+run_id="$(json "$work/body.json" id)"
+echo "run-id=$run_id" >> "$GITHUB_OUTPUT"
+echo "Shipyard run $run_id accepted for $(json "$work/body.json" shipyard "this app")"
 
 deadline=$(( $(date +%s) + SY_TIMEOUT_MINUTES * 60 ))
 last="" misses=0 status="syncing"
