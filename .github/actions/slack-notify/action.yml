@@ -77,6 +77,10 @@ inputs:
   kamal-version:
     description: 'Kamal version being used'
     required: false
+  deployment-url:
+    description: 'URL of what was deployed. Shown on the message as a "Site" line and an "Open site" button.'
+    required: false
+    default: ''
 
 outputs:
   message-ts:
@@ -160,22 +164,25 @@ runs:
         # release. It must never be interpolated into the script body.
         COMMIT_MESSAGE_INPUT: ${{ inputs.commit-message }}
       run: |
-        # Use jq to JSON-escape values, then strip the surrounding quotes so they can be embedded in templates
-        escape_for_template() {
-          local value="$1"
-          local escaped
-          escaped=$(printf '%s' "$value" | jq -Rsa .)
-          # Remove leading and trailing quotes from jq output
-          echo "${escaped:1:${#escaped}-2}"
+        # One plain line per value. The message shows the commit's subject
+        # line only: the body used to arrive as literal "\n" text, because
+        # the value was JSON-escaped here and again when the payload was
+        # templated. Instead of escaping, the characters that would need it
+        # are taken out (double quotes become single, backslashes become
+        # slashes, control characters go), so the value is safe in the JSON
+        # template and in $GITHUB_ENV whichever way it is templated.
+        plain_line() {
+          local value="${1%%$'\n'*}"
+          value="${value//$'\r'/}"
+          value="$(printf '%s' "$value" | tr -d '\000-\037')"
+          value="${value//\"/\'}"
+          value="${value//\\//}"
+          if [ "${#value}" -gt 200 ]; then value="${value:0:197}..."; fi
+          printf '%s' "$value"
         }
 
-        # jq -Rsa emits a single line (literal newlines become \n), so these are
-        # already safe to write as one NAME=VALUE pair.
-        escaped_commit_message=$(escape_for_template "$COMMIT_MESSAGE_INPUT")
-        printf 'COMMIT_MESSAGE=%s\n' "$escaped_commit_message" >> "$GITHUB_ENV"
-
-        escaped_failure_reason=$(escape_for_template "${FAILURE_REASON}")
-        printf 'FAILURE_REASON=%s\n' "$escaped_failure_reason" >> "$GITHUB_ENV"
+        printf 'COMMIT_MESSAGE=%s\n' "$(plain_line "$COMMIT_MESSAGE_INPUT")" >> "$GITHUB_ENV"
+        printf 'FAILURE_REASON=%s\n' "$(plain_line "${FAILURE_REASON}")" >> "$GITHUB_ENV"
 
     - name: Set notification template
       id: template
@@ -209,6 +216,7 @@ runs:
         TEMPLATE_NAME: ${{ steps.template.outputs.template }}
         SLACK_CHANNEL_ID: ${{ inputs.slack-channel-id }}
         UPDATE_TS: ${{ inputs.update-ts || inputs.update-message-ts }}
+        DEPLOYMENT_URL: ${{ inputs.deployment-url }}
       run: |
         set -euo pipefail
 
@@ -230,6 +238,24 @@ runs:
           jq --arg channel "${SLACK_CHANNEL_ID}" \
              '. + {channel: $channel}' "${template}" > "${payload}"
           echo "method=chat.postMessage" >> "$GITHUB_OUTPUT"
+        fi
+        # Where to look at what was deployed: a "Site" field in the first
+        # section and a button beside the run link. Only an http(s) URL is
+        # accepted, and it enters the payload through jq, never as template text.
+        if [[ "${DEPLOYMENT_URL:-}" =~ ^https?://[^[:space:]\<\>\|]+$ ]]; then
+          jq --arg url "${DEPLOYMENT_URL}" '
+            (.blocks |= (
+              (map(select(.type == "section" and has("fields"))) | length) as $n
+              | if $n > 0
+                then (first(to_entries[] | select(.value.type == "section" and (.value | has("fields")))) | .key) as $i
+                     | .[$i].fields += [{type: "mrkdwn", text: ("*Site*\n<" + $url + ">")}]
+                else . end
+              | map(if .type == "actions"
+                    then .elements += [{type: "button", text: {type: "plain_text", text: "Open site", emoji: true}, url: $url}]
+                    else . end)
+            ))' "${payload}" > "${payload}.url" && mv "${payload}.url" "${payload}"
+        elif [ -n "${DEPLOYMENT_URL:-}" ]; then
+          echo "::warning::deployment-url is not an http(s) URL; left off the Slack message"
         fi
         echo "path=${payload}" >> "$GITHUB_OUTPUT"
 

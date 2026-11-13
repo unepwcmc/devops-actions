@@ -1,0 +1,73 @@
+name: 'Shipyard Deploy'
+description: 'Deploy this commit to a WCMC harbour through Shipyard and report the result back to this run'
+author: 'WCMC DevOps Team'
+
+# The job that uses this action needs:
+#   runs-on: [self-hosted, deployment]     (the Platform is on the internal network)
+#   permissions:
+#     id-token: write                      (GitHub issues the identity token Platform checks)
+#     contents: read
+# No deploy secret is stored in the repository: the identity token is the credential.
+
+inputs:
+  environment:
+    description: 'Environment to deploy to (staging; production is not open yet)'
+    required: true
+  app:
+    description: 'Shipyard app name. Only needed when this repository holds more than one app.'
+    required: false
+    default: ''
+  platform-url:
+    description: 'Base URL of the WCMC Platform (pass the organisation variable SHIPYARD_PLATFORM_URL)'
+    required: true
+  audience:
+    description: 'Audience of the identity token (defaults to platform-url)'
+    required: false
+    default: ''
+  dry-run:
+    description: 'Only report what the sync would add, change and delete; deploy nothing'
+    required: false
+    default: 'false'
+  timeout-minutes:
+    description: 'How long to wait for the deploy before failing this step (an app with two parts builds two images in turn)'
+    required: false
+    default: '60'
+  poll-seconds:
+    description: 'Seconds between status checks'
+    required: false
+    default: '10'
+  ca-cert-file:
+    description: 'Path on the runner to a CA bundle for the Platform certificate (optional)'
+    required: false
+    default: ''
+
+outputs:
+  status:
+    description: 'Final status: success, failed, canceled, refused or timeout'
+    value: ${{ steps.deploy.outputs.status }}
+  run-id:
+    description: 'Platform deploy run id'
+    value: ${{ steps.deploy.outputs.run-id }}
+  deploy-url:
+    description: 'URL of the deployed app'
+    value: ${{ steps.deploy.outputs.deploy-url }}
+  pipeline-url:
+    description: 'URL of the Shipyard pipeline'
+    value: ${{ steps.deploy.outputs.pipeline-url }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Deploy through Shipyard
+      id: deploy
+      shell: bash
+      env:
+        SY_ENVIRONMENT: ${{ inputs.environment }}
+        SY_APP: ${{ inputs.app }}
+        SY_PLATFORM_URL: ${{ inputs.platform-url }}
+        SY_AUDIENCE: ${{ inputs.audience }}
+        SY_DRY_RUN: ${{ inputs.dry-run }}
+        SY_TIMEOUT_MINUTES: ${{ inputs.timeout-minutes }}
+        SY_POLL_SECONDS: ${{ inputs.poll-seconds }}
+        SY_CA_CERT_FILE: ${{ inputs.ca-cert-file }}
+      run: bash "${GITHUB_ACTION_PATH}/deploy.sh"
