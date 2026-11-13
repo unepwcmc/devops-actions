@@ -29,9 +29,9 @@ inputs:
     required: false
     default: 'false'
   timeout-minutes:
-    description: 'How long to wait for the deploy before failing this step'
+    description: 'How long to wait for the deploy before failing this step (an app with two parts builds two images in turn)'
     required: false
-    default: '30'
+    default: '60'
   poll-seconds:
     description: 'Seconds between status checks'
     required: false
